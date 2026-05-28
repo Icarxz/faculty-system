@@ -17,6 +17,11 @@ const UserSchema = new mongoose.Schema({
     default: 'OUT_OF_OFFICE' 
   },
   currentLocation: { type: String }, 
+  statusUpdatedAt: { type: Date, default: null },
+  noticeMessage: { type: String, default: '' },
+  flaggedDate: { type: String, default: '' },
+  flaggedReason: { type: String, default: '' },
+  statusNote:      { type: String, default: '' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', UserSchema);

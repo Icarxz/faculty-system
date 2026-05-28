@@ -2,58 +2,78 @@ const cron = require('node-cron');
 const User = require('../models/User');
 const Schedule = require('../models/Schedule');
 
-// This cron expression '* * * * *' means "Run every 1 minute"
 const startStatusUpdater = () => {
-  cron.schedule('* * * * *', async () => {
-    console.log('⏰ [Cron Job] Checking faculty schedules...');
-    
-    const now = new Date();
-    const currentDay = now.getDay(); 
-    
-    // Format the current time as HH:MM (24-hour format) to match our database
-    const currentHours = now.getHours().toString().padStart(2, '0');
-    const currentMinutes = now.getMinutes().toString().padStart(2, '0');
-    const currentTime = `${currentHours}:${currentMinutes}`;
+  console.log('Automated Status & Schedule Updater Initialized');
 
+  // Run every 5 minutes (a good balance between real-time and server load)
+  cron.schedule('*/5 * * * *', async () => {
     try {
-      // 1. Find all classes that are happening RIGHT NOW
-      const activeClasses = await Schedule.find({
-        dayOfWeek: currentDay,
-        startTime: { $lte: currentTime }, // Class started before or at current time
-        endTime: { $gt: currentTime }     // Class ends after current time
-      });
+      const now = new Date();
+      const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      const currentHour = now.getHours();
+      
+      const currentHoursStr = now.getHours().toString().padStart(2, '0');
+      const currentMinutesStr = now.getMinutes().toString().padStart(2, '0');
+      const currentTime = `${currentHoursStr}:${currentMinutesStr}`;
 
-      // Extract just the IDs of the faculty members who are teaching right now
-      const activeFacultyIds = activeClasses.map(cls => cls.facultyId);
-
-      // 2. Update those specific faculty members to 'IN_CLASS'
-      for (let cls of activeClasses) {
-        await User.findByIdAndUpdate(cls.facultyId, {
-          currentStatus: 'IN_CLASS',
-          currentLocation: cls.room // Update their location to the classroom
-        });
+      // 1. OFF-HOURS & LUNCH SWEEP (11 AM - 1 PM) OR (8 PM - 6 AM)
+      if ((currentHour >= 20 || currentHour < 6) || (currentHour >= 11 && currentHour < 13)) {
+        await User.updateMany(
+          { role: 'FACULTY' },
+          { $set: { currentStatus: 'OUT_OF_OFFICE', currentLocation: '', statusNote: 'System Auto-Reset (Off-hours/Lunch)' } }
+        );
+        return; // Stop here during off-hours
       }
 
-      // 3. Revert faculty back to 'AVAILABLE' if their class just finished
-      // We look for anyone marked 'IN_CLASS' who is NOT in our activeFacultyIds list
-      await User.updateMany(
-        {
-          role: 'FACULTY',
-          currentStatus: 'IN_CLASS',
-          _id: { $nin: activeFacultyIds } 
-        },
-        {
-          currentStatus: 'AVAILABLE',
-          currentLocation: '' // Clear the classroom location so it defaults back to their office
+      // 2. WORKING HOURS - SMART SWEEP
+      const faculties = await User.find({ role: 'FACULTY' });
+
+      for (let faculty of faculties) {
+        // Did they scan in today?
+        const lastUpdate = faculty.statusUpdatedAt ? new Date(faculty.statusUpdatedAt) : null;
+        const updatedToday = lastUpdate && 
+                             lastUpdate.getDate() === now.getDate() &&
+                             lastUpdate.getMonth() === now.getMonth() &&
+                             lastUpdate.getFullYear() === now.getFullYear();
+
+        // Check their schedule for today
+        const todaysClasses = await Schedule.find({ facultyId: faculty._id, dayOfWeek: currentDay });
+        const hasClassToday = todaysClasses.length > 0;
+
+        // SCENARIO A: THEY ARE ABSENT (No QR Scan)
+        if (!updatedToday) {
+          if (hasClassToday) {
+            faculty.currentStatus = 'ABSENT';
+            faculty.statusNote = 'Auto-flagged: Missed scheduled class day';
+          } else {
+            faculty.currentStatus = 'OUT_OF_OFFICE';
+            faculty.statusNote = 'Auto-flagged: No classes scheduled today';
+          }
+          faculty.currentLocation = '';
+          await faculty.save();
+          continue; 
         }
-      );
 
-      if (activeClasses.length > 0) {
-        console.log(`✅ Updated ${activeClasses.length} faculty to IN_CLASS.`);
+        // SCENARIO B: THEY ARE PRESENT (QR Scanned Today)
+        // Now we safely apply your "In Class" vs "Available" logic!
+        const activeClass = todaysClasses.find(cls => cls.startTime <= currentTime && cls.endTime > currentTime);
+
+        // Don't overwrite if they manually set themselves to ON_LEAVE, ON_BREAK, or IN_MEETING
+        const isManuallyBusy = ['ON_LEAVE', 'ON_BREAK', 'IN_MEETING'].includes(faculty.currentStatus);
+
+        if (!isManuallyBusy) {
+          if (activeClass) {
+            faculty.currentStatus = 'IN_CLASS';
+            faculty.currentLocation = activeClass.room;
+          } else {
+            faculty.currentStatus = 'AVAILABLE';
+            faculty.currentLocation = 'Faculty Office'; // Default fallback
+          }
+          await faculty.save();
+        }
       }
-
     } catch (error) {
-      console.error('❌ Error running status updater cron job:', error);
+      console.error('Error in Status Updater Cron Job:', error);
     }
   });
 };

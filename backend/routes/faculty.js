@@ -4,30 +4,55 @@ const User = require('../models/User');
 const Schedule = require('../models/Schedule');
 const Appointment = require('../models/Appointment');
 const Announcement = require('../models/Announcement');
+const StatusHistory = require('../models/StatusHistory');
 
 // 1. GET ROUTE: Fetch all faculty members for the dashboard
 router.get('/status', async (req, res) => {
   try {
     const facultyList = await User.find({ role: 'FACULTY' })
-      .select('name programPosition currentStatus currentLocation room')
-      .sort({ name: 1 });
-    res.json(facultyList);
+      .select('name programPosition currentStatus currentLocation room statusUpdatedAt statusNote qrHash') // [cite: 711]
+      .sort({ name: 1 }); // [cite: 711]
+
+    // We figure out exactly when "Midnight" was today [cite: 712]
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // [cite: 712]
+
+    // We loop through every professor [cite: 712]
+    const enriched = facultyList.map(f => {
+      const obj = f.toObject(); // [cite: 712]
+      const lastUpdate = f.statusUpdatedAt ? new Date(f.statusUpdatedAt) : null; // [cite: 712]
+      const updatedToday = lastUpdate && lastUpdate >= today; // [cite: 712]
+      
+      // If they didn't update today, we artificially change their status to 'NOT_UPDATED' [cite: 713]
+      if (!updatedToday) {
+        obj.currentStatus = 'NOT_UPDATED'; // [cite: 714]
+      }
+      return obj; // [cite: 714]
+    });
+
+    res.json(enriched); // [cite: 714]
   } catch (error) {
-    res.status(500).json({ error: 'Server error fetching faculty status' });
+    res.status(500).json({ error: 'Server error fetching faculty status' }); // [cite: 715]
   }
 });
 
 // 2. PUT ROUTE: Update a specific faculty member's status
 router.put('/update-status/:id', async (req, res) => {
-  const { currentStatus, currentLocation } = req.body;
+  const { currentStatus, currentLocation, statusNote } = req.body;
   try {
-    const updatedFaculty = await User.findByIdAndUpdate(
-      req.params.id, { currentStatus, currentLocation }, { new: true }
+    const updated = await User.findByIdAndUpdate(
+      req.params.id,
+      { 
+        currentStatus, 
+        currentLocation, 
+        statusNote,
+        statusUpdatedAt: new Date() // <--- This is the magic! It stamps the exact current time [cite: 716]
+      },
+      { new: true } // [cite: 716, 717]
     );
-    if (!updatedFaculty) return res.status(404).json({ error: 'Faculty not found' });
-    res.json(updatedFaculty);
-  } catch (error) {
-    res.status(500).json({ error: 'Server error updating status' });
+    res.json(updated); // [cite: 717]
+  } catch (err) {
+    res.status(500).json({ error: 'Could not update status.' }); // [cite: 717]
   }
 });
 
@@ -57,20 +82,30 @@ router.post('/schedule/add', async (req, res) => {
 
 // 5. POST ROUTE: Admin adds a new faculty member (QR Generation)
 router.post('/add', async (req, res) => {
-  const { name, email, programPosition, room } = req.body;
+  const { name, email, programPosition, room, role } = req.body;
   try {
     const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: 'Email already exists.' });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
 
-    const uniqueQrHash = `fac_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    await User.create({
-      role: 'FACULTY', name, email, qrHash: uniqueQrHash,
-      programPosition, room, currentStatus: 'AVAILABLE'
+    // Generate a unique QR Hash based on their email
+    const qrHash = email.split('@')[0] + '_qr_' + new Date().getFullYear();
+
+    const newUser = new User({
+      name,
+      email,
+      programPosition,
+      room,
+      role: role || 'FACULTY', // === NEW: Save their role (defaults to FACULTY if empty) ===
+      qrHash,
+      currentStatus: 'OUT_OF_OFFICE',
     });
 
-    res.json({ message: 'Faculty added successfully!', qrHash: uniqueQrHash, facultyName: name });
+    await newUser.save();
+    res.json({ message: 'Account provisioned successfully', qrHash, facultyName: name });
   } catch (error) {
-    res.status(500).json({ error: 'Server error while adding faculty.' });
+    res.status(500).json({ error: 'Error provisioning account' });
   }
 });
 
@@ -84,7 +119,7 @@ router.get('/seed', async (req, res) => {
 
     // Create Admin, Dean, and a Student
     await User.create({ role: 'ADMIN', name: 'System Admin', email: 'admin@univ.edu', qrHash: 'admin_qr_999', programPosition: 'IT Department' });
-    await User.create({ role: 'DEAN', name: 'Dr. Luigi Flores', email: 'dean@univ.edu', qrHash: 'dean_qr_777', programPosition: 'Dean of CCIS' });
+    await User.create({ role: 'DEAN', name: 'Dr. John C. Amar', email: 'dean@univ.edu', qrHash: 'dean_qr_777', programPosition: 'Dean of CCIS' });
     
     // NEW: Create a test Student
     await User.create({ role: 'STUDENT', name: 'Juan Dela Cruz', email: 'student@univ.edu', qrHash: 'student_qr_111', programPosition: 'BS INFO 3D' });
@@ -194,6 +229,70 @@ router.get('/users/all', async (req, res) => {
     res.json(users);
   } catch (error) {
     res.status(500).json({ error: 'Server error fetching users' });
+  }
+});
+
+// 1. Fetch appointments for ONE specific faculty member
+router.get('/appointments/me/:facultyId', async (req, res) => {
+  try {
+    const appointments = await Appointment.find({ facultyId: req.params.facultyId }).sort({ createdAt: -1 });
+    res.json(appointments);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error fetching my appointments' });
+  }
+});
+
+// 2. Save a Notice
+router.put('/notice/:id', async (req, res) => {
+  try {
+    const updated = await User.findByIdAndUpdate(req.params.id, { noticeMessage: req.body.notice }, { new: true });
+    res.json(updated);
+  } catch (err) { res.status(500).json({ error: 'Error saving notice' }); }
+});
+
+// 3. Save a Future Flag Date & AUTO-CANCEL Appointments on that date
+router.put('/flag-date/:id', async (req, res) => {
+  try {
+    const { flagDate, reason } = req.body;
+    
+    // 1. Update the faculty's profile with the flag
+    const updated = await User.findByIdAndUpdate(
+      req.params.id, 
+      { flaggedDate: flagDate, flaggedReason: reason }, 
+      { new: true }
+    );
+
+    // 2. MASS CANCELLATION SWEEP
+    // Find all appointments for this professor on this exact date that haven't been rejected yet
+    await Appointment.updateMany(
+      { 
+        facultyId: req.params.id, 
+        date: flagDate, 
+        status: { $in: ['PENDING', 'APPROVED'] } 
+      },
+      { 
+        $set: { 
+          status: 'CANCELLED (FACULTY ON LEAVE)',
+          reason: 'System Auto-Cancel: Faculty declared emergency leave.' // Overwrites the reason to inform the student
+        } 
+      }
+    );
+
+    res.json(updated);
+  } catch (err) { res.status(500).json({ error: 'Error saving flag date' }); }
+});
+
+// 4. Fetch appointments for ONE specific student
+router.get('/appointments/student/:studentName', async (req, res) => {
+  try {
+    // In a full production app, we would search by studentId, but for this MVP, 
+    // searching by their exact userName string works perfectly.
+    const appointments = await Appointment.find({ studentName: req.params.studentName })
+      .populate('facultyId', 'name') // We populate this so the student can see the Professor's name
+      .sort({ createdAt: -1 });
+    res.json(appointments);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error fetching student appointments' });
   }
 });
 

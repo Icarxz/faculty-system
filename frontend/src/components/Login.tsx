@@ -1,19 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box,
-  Heading,
-  Text,
-  VStack,
-  Input,
-  Button,
-  Tabs,
-  TabList,
-  TabPanels,
-  Tab,
-  TabPanel,
-  useToast,
-  Center
+  Box, Heading, Text, VStack, Input, Button, Tabs, TabList, TabPanels, Tab, TabPanel,
+  useToast, Center, useColorModeValue
 } from '@chakra-ui/react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
@@ -24,8 +13,13 @@ export default function Login() {
   const navigate = useNavigate();
   const toast = useToast();
 
-  // --- Handle QR Scan ---
-  // --- Handle QR Scan ---
+  // Dynamic Theme Colors
+  const bg = useColorModeValue('gray.50', 'gray.900');
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const textColor = useColorModeValue('gray.900', 'white');
+  const mutedText = useColorModeValue('gray.500', 'gray.400');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
+
   const handleScan = async (scannedText: string) => {
     try {
       const response = await fetch('http://localhost:5000/api/auth/qr-login', {
@@ -33,18 +27,24 @@ export default function Login() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ qrHash: scannedText }),
       });
-
       const data = await response.json();
-
       if (response.ok) {
-        toast({ title: `Welcome, ${data.user.name}`, status: "success", duration: 2000 });
         
-        // 1. Save user details to browser memory
+        // --- NEW: Better Toast Message ---
+        const welcomeMessage = data.user.role === 'FACULTY' 
+          ? `Welcome, ${data.user.name}. Attendance recorded!` 
+          : `Welcome, ${data.user.name}`;
+
+        toast({ 
+          title: welcomeMessage, 
+          status: "success", 
+          duration: 3000,
+          position: "top"
+        });
         localStorage.setItem('userRole', data.user.role);
         localStorage.setItem('userName', data.user.name);
         localStorage.setItem('userId', data.user._id);
 
-        // 2. Redirect to the correct dashboard based on their role
         switch (data.user.role) {
           case 'ADMIN': navigate('/admin-dashboard'); break;
           case 'DEAN': navigate('/dean-dashboard'); break;
@@ -52,19 +52,14 @@ export default function Login() {
           case 'STUDENT': navigate('/student-dashboard'); break;
           default: navigate('/'); 
         }
-
       } else {
         toast({ title: data.error, status: "error", duration: 3000 });
       }
-    } catch (error) {
-      toast({ title: "Network error", status: "error", duration: 3000 });
-    }
+    } catch (error) { toast({ title: "Network error", status: "error" }); }
   };
 
-  // --- Handle Standard Login (For future implementation) ---
   const handlePasswordLogin = () => {
     setLoading(true);
-    // Placeholder for standard login logic
     setTimeout(() => {
       setLoading(false);
       toast({ title: "Use QR Code for MVP", status: "info", duration: 3000 });
@@ -72,73 +67,46 @@ export default function Login() {
   };
 
   return (
-    <Center minH="100vh" bg="#f0f4f8">
-      <Box bg="white" p={8} borderRadius="xl" boxShadow="lg" w="100%" maxW="400px">
-        <VStack spacing={2} mb={6} textAlign="center">
-          <Heading size="lg">Personnel Availability System</Heading>
-          <Text color="gray.500" fontSize="sm">College of Computing and Information Sciences</Text>
+    <Center minH="100vh" bg={bg} p={4}>
+      <Box bg={cardBg} p={8} borderRadius="lg" borderWidth="1px" borderColor={borderColor} w="100%" maxW="400px" shadow="sm">
+        <VStack spacing={2} mb={8} textAlign="center">
+          <Heading size="lg" color={textColor} letterSpacing="tight">Access Portal</Heading>
+          <Text color={mutedText} fontSize="sm">College of Computing and Information Sciences</Text>
         </VStack>
 
-        <Tabs variant="soft-rounded" colorScheme="blue" isFitted>
-          <TabList mb={4} bg="gray.100" p={1} borderRadius="full">
-            <Tab borderRadius="full">Login</Tab>
-            <Tab borderRadius="full">QR Code</Tab>
+        <Tabs variant="line" colorScheme="blue" isFitted isLazy>
+          <TabList mb={6} borderColor={borderColor}>
+            <Tab color={textColor} fontWeight="semibold">Password</Tab>
+            <Tab color={textColor} fontWeight="semibold">QR Scanner</Tab>
           </TabList>
 
           <TabPanels>
-            {/* Password Tab */}
-            <TabPanel px={0}>
-              <VStack spacing={4}>
+            <TabPanel px={0} pt={0}>
+              <VStack spacing={5}>
                 <Box w="100%">
-                  <Text mb={1} fontSize="sm" fontWeight="bold">Email Address</Text>
-                  <Input 
-                    placeholder="user@ccis.edu" 
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
+                  <Text mb={2} fontSize="sm" fontWeight="bold" color={textColor}>Email Address</Text>
+                  <Input placeholder="user@ccis.edu" value={email} onChange={(e) => setEmail(e.target.value)} focusBorderColor="blue.500" color={textColor} />
                 </Box>
                 <Box w="100%">
-                  <Text mb={1} fontSize="sm" fontWeight="bold">Password</Text>
-                  <Input 
-                    type="password" 
-                    placeholder="Enter your password" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <Text mb={2} fontSize="sm" fontWeight="bold" color={textColor}>Password</Text>
+                  <Input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} focusBorderColor="blue.500" color={textColor} />
                 </Box>
-                <Button w="100%" colorScheme="blackAlpha" bg="black" isLoading={loading} onClick={handlePasswordLogin}>
+                <Button w="100%" colorScheme="blue" bg="blue.600" _hover={{ bg: 'blue.700' }} isLoading={loading} onClick={handlePasswordLogin}>
                   Sign In
                 </Button>
               </VStack>
             </TabPanel>
 
-            {/* QR Code Scanner Tab */}
-            <TabPanel px={0}>
-              <Box borderRadius="lg" overflow="hidden" borderWidth="1px">
-                <Scanner 
-  onScan={(result) => {
-    // The new version returns an array of detected codes. 
-    // We just grab the text (rawValue) from the first one it sees.
-    if (result && result.length > 0) {
-      handleScan(result[0].rawValue);
-    }
-  }} 
-  onError={(error) => console.log(error)} 
-/>
+            <TabPanel px={0} pt={0}>
+              <Box borderRadius="md" overflow="hidden" borderWidth="1px" borderColor={borderColor} bg="black">
+                <Scanner onScan={(result) => { if (result && result.length > 0) handleScan(result[0].rawValue); }} />
               </Box>
-              <Text textAlign="center" mt={3} fontSize="sm" color="gray.500">
-                Position your QR code inside the frame to log in.
+              <Text textAlign="center" mt={4} fontSize="sm" color={mutedText}>
+                Align QR code within the frame
               </Text>
             </TabPanel>
           </TabPanels>
         </Tabs>
-
-        {/* Demo Accounts Box */}
-        <Box mt={6} p={4} bg="blue.50" borderRadius="md" fontSize="sm" color="gray.600">
-          <Text fontWeight="bold" mb={2}>Demo Accounts:</Text>
-          <Text>Faculty: faculty@ccis.edu / faculty123</Text>
-          <Text>Admin: admin@ccis.edu / admin123</Text>
-        </Box>
       </Box>
     </Center>
   );
