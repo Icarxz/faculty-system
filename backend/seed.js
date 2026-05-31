@@ -8,24 +8,35 @@ mongoose.connect('mongodb://127.0.0.1:27017/faculty-attendance')
 // Define Schema references
 const User = require('./models/User'); 
 const Schedule = require('./models/Schedule');
+const Appointment = require('./models/Appointment');
+const Announcement = require('./models/Announcement');
 
 const seedDatabase = async () => {
   try {
-    console.log(' Clearing old Faculty and Schedule data...');
-    // Delete all users who are FACULTY (keeps Admin/Dean/Student intact)
-    await User.deleteMany({ role: 'FACULTY' });
+    console.log('☢️  INITIATING NUCLEAR WIPE...');
+    // WIPE EVERYTHING. No exceptions.
+    await User.deleteMany({});
     await Schedule.deleteMany({});
+    await Appointment.deleteMany({});
+    await Announcement.deleteMany({});
 
-    console.log(' Planting real instructors...');
+    console.log('🌱 Database is completely empty. Planting fresh accounts...');
 
-    // 1. Create the Instructors
+    // 1. Core System Accounts
+    await User.create({ role: 'ADMIN', name: 'System Admin', email: 'admin@univ.edu', qrHash: 'admin_qr_999', programPosition: 'IT Department' });
+    await User.create({ role: 'DEAN', name: 'John C. Amar, DMgt', email: 'jamar@ccis.edu', qrHash: 'dean_qr_777', programPosition: 'Dean of CCIS', currentStatus: 'AVAILABLE' });
+    await User.create({ role: 'STUDENT', name: 'Juan Dela Cruz', email: 'student@univ.edu', qrHash: 'student_qr_111', programPosition: 'BS INFO 3D' });
+
+    console.log('👨‍🏫 Planting real instructors...');
+
+    // 2. Create the Instructors
     const instructors = await User.insertMany([
       {
         name: 'Ledilyn H. Colmo',
         email: 'lcolmo@ccis.edu',
         role: 'FACULTY',
         programPosition: 'Faculty / Librarian',
-        qrHash: 'colmo_qr_2026', // Use this exactly to log in
+        qrHash: 'colmo_qr_2026', 
         currentStatus: 'OUT_OF_OFFICE',
         room: 'New Library'
       },
@@ -70,9 +81,9 @@ const seedDatabase = async () => {
     // Map the IDs so we can attach schedules to the right person
     const [colmoId, edjanId, fortalezaId, percyId, silvaId] = instructors.map(i => i._id);
 
-    console.log(' Assigning official schedules...');
+    console.log('📅 Assigning official schedules...');
 
-    // 2. Insert their specific schedules (Day: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri)
+    // 3. Insert their specific schedules (Day: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri)
     await Schedule.insertMany([
       // --- LEDILYN H. COLMO ---
       { facultyId: colmoId, subject: 'LIS 6 (BLIS 2-A)', room: 'New Library', dayOfWeek: 2, startTime: '08:00', endTime: '09:30' },
@@ -108,10 +119,10 @@ const seedDatabase = async () => {
       { facultyId: silvaId, subject: 'INFOT 9 (BS INFO 3D)', room: 'IICT 305', dayOfWeek: 5, startTime: '13:00', endTime: '16:00' }
     ]);
 
-    console.log(' SUCCESS! Database is seeded with real CCIS data.');
+    console.log('✅ SUCCESS! Database is seeded with real CCIS data.');
     process.exit();
   } catch (error) {
-    console.error(' Seeding Error:', error);
+    console.error('❌ Seeding Error:', error);
     process.exit(1);
   }
 };

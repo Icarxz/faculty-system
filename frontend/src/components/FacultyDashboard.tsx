@@ -1,15 +1,104 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Calendar, momentLocalizer } from 'react-big-calendar';
-import moment from 'moment';
-import 'react-big-calendar/lib/css/react-big-calendar.css';
+"use client";
 
-const localizer = momentLocalizer(moment);
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Heading, Table, Thead, Tbody, Tr, Th, Td, TableContainer,
-  Badge, Text, Button, Select, Input, HStack, useToast, FormControl, FormLabel, Flex, VStack, Textarea,
+  Badge, Text, Button as ChakraButton, Select, Input, HStack, useToast, FormControl, FormLabel, Flex, VStack, Textarea,
   useColorMode, useColorModeValue
 } from '@chakra-ui/react';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+type Page      = "status" | "schedule" | "requests";
+type ViewMode  = "week" | "day";
+type EventType = "teaching" | "appointment";
+
+interface ScheduleEvent {
+  id:          string;
+  subject:     string;     
+  section:     string;     
+  room:        string;     
+  type:        EventType;
+  dayOfWeek:   number;     // 0 = Monday … 5 = Saturday
+  startHour:   number;
+  startMinute: number;
+  endHour:     number;
+  endMinute:   number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS & HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const START_HOUR = 7;
+const END_HOUR   = 20;
+
+// === FIX: Compact Layout ===
+const SLOT_PX = 30; // Shrinks the calendar height
+// ===========================
+
+const TOTAL_SLOTS = (END_HOUR - START_HOUR) * 2;
+const GRID_HEIGHT = TOTAL_SLOTS * SLOT_PX;
+
+function getWeekDates(offset: number): Date[] {
+  const today  = new Date();
+  const dow    = today.getDay(); 
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
+
+function formatWeekLabel(dates: Date[]): string {
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const s = dates[0];
+  const e = dates[5];
+  return `${MONTHS[s.getMonth()]} ${s.getDate()} – ${MONTHS[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+}
+
+function formatHour(hour: number): string {
+  const h = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+  return `${h}${hour >= 12 ? "PM" : "AM"}`;
+}
+
+export const formatTime = (timeStr: string) => {
+  if (!timeStr) return '';
+  const [hour, minute] = timeStr.split(':');
+  const h = parseInt(hour, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const standardHour = h % 12 || 12;
+  return `${standardHour}:${minute} ${ampm}`;
+};
+
+function isToday(date: Date): boolean {
+  const t = new Date();
+  return (
+    date.getDate()     === t.getDate()  &&
+    date.getMonth()    === t.getMonth() &&
+    date.getFullYear() === t.getFullYear()
+  );
+}
+
+function getEventPos(event: ScheduleEvent): { top: number; height: number } {
+  const startSlot = (event.startHour - START_HOUR) * 2 + event.startMinute / 30;
+  const endSlot   = (event.endHour   - START_HOUR) * 2 + event.endMinute   / 30;
+  return {
+    top:    Math.max(0, startSlot) * SLOT_PX,
+    height: Math.max(28, (endSlot - startSlot) * SLOT_PX - 2),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function FacultyDashboard() {
   const navigate = useNavigate();
@@ -19,29 +108,64 @@ export default function FacultyDashboard() {
   const userId = localStorage.getItem('userId');
   const userName = localStorage.getItem('userName');
 
-  const [activeView, setActiveView] = useState('status');
+  // ── UI State ─────────────────────────────────────────────────────────────────
+  const [activePage, setActivePage] = useState<Page>("schedule");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [viewMode,   setViewMode]   = useState<ViewMode>("week");
+  const [focusDay,   setFocusDay]   = useState(0);       
+  
+  // ── Data State ───────────────────────────────────────────────────────────────
   const [myStatus, setMyStatus] = useState('');
   const [myLocation, setMyLocation] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
-  
   const [mySchedule, setMySchedule] = useState<any[]>([]);
-  const [myAppointments, setMyAppointments] = useState<any[]>([]); // NEW STATE
+  const [myAppointments, setMyAppointments] = useState<any[]>([]);
   const hasSyncedRef = useRef(false);
-  
   const [notice, setNotice] = useState('');
   const [flagDate, setFlagDate] = useState('');
   const [flagReason, setFlagReason] = useState('');
 
-  // Universal Theme Hooks
-  const mainBg = useColorModeValue('gray.50', 'gray.900');
+  // ── Derived values ────────────────────────────────────────────────────────
+  const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
+  const weekLabel = useMemo(() => formatWeekLabel(weekDates), [weekDates]);
+  const visibleDayIndices = viewMode === "week" ? [0, 1, 2, 3, 4, 5] : [focusDay];
+
+  // ── Color tokens (Synced with Chakra Dark Mode) ────────────────────────────
+  const dk = colorMode === 'dark';
+  const C = {
+    pageBg:    dk ? "#0c1421" : "#eef2f7",
+    sidebar:   dk ? "#070e1b" : "#0f2240",
+    surface:   dk ? "#111d30" : "#ffffff",
+    surfaceAlt:dk ? "#0d1828" : "#f8fafc",
+    border:    dk ? "#1e3048" : "#dde3ec",
+    borderFaint:dk? "#162035" : "#f0f3f7",
+    text:      dk ? "#e8f0fe" : "#0f2240",
+    textMid:   dk ? "#7a93b0" : "#6b7fa0",
+    navText:   dk ? "#7a93b0" : "#8eaecb",
+    navActive: dk ? "#ffffff" : "#ffffff",
+    navBg:     dk ? "rgba(59,130,246,0.18)" : "rgba(255,255,255,0.10)",
+    teach:     "#1d4ed8",
+    teachBg:   dk ? "#162340"   : "#dbeafe",
+    teachText: dk ? "#93c5fd"   : "#1e40af",
+    appt:      "#059669",
+    apptBg:    dk ? "#0d2e22"   : "#d1fae5",
+    apptText:  dk ? "#6ee7b7"   : "#065f46",
+    todayBorder: "#2563eb",
+    todayHead:   dk ? "#0f2745" : "#eff6ff",
+    todayBand:   dk ? "rgba(37,99,235,0.06)" : "rgba(219,234,254,0.28)",
+  };
+
+  const btnBase: React.CSSProperties = {
+    border: "none", cursor: "pointer", fontFamily: "inherit", letterSpacing:"0.01em",
+  };
+
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const textColor = useColorModeValue('gray.900', 'white');
   const mutedText = useColorModeValue('gray.500', 'gray.400');
-  const sidebarBg = useColorModeValue('black', 'gray.900');
 
+  // ── API Functions ────────────────────────────────────────────────────────
   const fetchData = () => {
-    // Fetch Status
     fetch('http://localhost:5000/api/faculty/status')
       .then((res) => res.json())
       .then((data) => {
@@ -56,7 +180,6 @@ export default function FacultyDashboard() {
         }
       });
       
-    // Fetch Appointments
     if (userId) {
       fetch(`http://localhost:5000/api/faculty/appointments/me/${userId}`)
         .then(res => res.json())
@@ -74,7 +197,6 @@ export default function FacultyDashboard() {
     return () => clearInterval(intervalId);
   }, [userId]);
 
-  // --- ACTIONS ---
   const handleUpdateMyStatus = async () => {
     setIsUpdating(true);
     try {
@@ -94,7 +216,7 @@ export default function FacultyDashboard() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notice })
       });
-      toast({ title: 'Notice Broadcasted to Students!', status: 'success' });
+      toast({ title: 'Notice Broadcasted!', status: 'success' });
     } catch (error) {}
   };
 
@@ -109,53 +231,28 @@ export default function FacultyDashboard() {
     } catch (error) {}
   };
 
-  // --- SMART APPROVAL ENGINE ---
   const updateAppointmentStatus = async (targetApt: any, newStatus: string) => {
-    // Only run the smart checks if they are trying to APPROVE an appointment
     if (newStatus === 'APPROVED') {
-      
-      // Filter the faculty's list to ONLY look at already APPROVED appointments on the SAME date
-      const approvedThatDay = myAppointments.filter(
-        a => a.status === 'APPROVED' && a.date === targetApt.date
-      );
-
-      // Helper function to convert "HH:MM" string to total minutes for easy math
+      const approvedThatDay = myAppointments.filter(a => a.status === 'APPROVED' && a.date === targetApt.date);
       const timeToMinutes = (timeStr: string) => {
         const [hours, minutes] = timeStr.split(':').map(Number);
         return (hours * 60) + minutes;
       };
-
       const targetMinutes = timeToMinutes(targetApt.time);
 
       for (let existingApt of approvedThatDay) {
         const existingMinutes = timeToMinutes(existingApt.time);
         const timeDifference = Math.abs(targetMinutes - existingMinutes);
-
-        // 1. HARD BLOCK: Exact Overlap (0 minutes apart)
         if (timeDifference === 0) {
-          toast({ 
-            title: "Overlap Blocked", 
-            description: `You already have an appointment with ${existingApt.studentName} at this exact time!`, 
-            status: "error", 
-            duration: 5000 
-          });
-          return; // Instantly stops the function. Does NOT send to backend.
+          toast({ title: "Overlap Blocked", description: `Appointment exists at exact time!`, status: "error", duration: 5000 });
+          return; 
         }
-
-        // 2. WARNING: Proximity (60 minutes or less apart)
         if (timeDifference <= 60) {
-          const isConfirmed = window.confirm(
-            `WARNING: This appointment is only ${timeDifference} minutes away from your approved meeting with ${existingApt.studentName} at ${existingApt.time}. \n\nDo you want to proceed and accept a back-to-back schedule?`
-          );
-          
-          if (!isConfirmed) {
-            return; // If they click "Cancel" on the popup, stop the function.
-          }
+          const isConfirmed = window.confirm(`WARNING: This appointment is only ${timeDifference} minutes away from ${existingApt.studentName} at ${formatTime(existingApt.time)}. Proceed?`);
+          if (!isConfirmed) return; 
         }
       }
     }
-
-    // If it passes the checks (or if it's a Rejection), proceed with the API call
     try {
       const response = await fetch(`http://localhost:5000/api/faculty/appointment/${targetApt._id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -163,154 +260,350 @@ export default function FacultyDashboard() {
       });
       if (response.ok) {
         toast({ title: `Appointment ${newStatus}`, status: 'success' });
-        fetchData(); // refresh list
+        fetchData(); 
       }
     } catch (error) {}
   };
 
-  const getDayName = (dayNum: number) => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayNum] || 'Unknown';
+  // ── DYNAMIC DATA TRANSLATOR ──────────────────────────────────
+  const dynamicEvents = useMemo(() => {
+    const generated: ScheduleEvent[] = [];
+    
+    mySchedule.forEach(sched => {
+      const [sH, sM] = sched.startTime.split(':').map(Number);
+      const [eH, eM] = sched.endTime.split(':').map(Number);
+      
+      let subject = sched.subject;
+      let section = "";
+      if (subject.includes('(')) {
+          const parts = subject.split('(');
+          subject = parts[0].trim();
+          section = parts[1].replace(')', '').trim();
+      }
 
-  const formatTime = (timeStr: string) => {
-    if (!timeStr) return '';
-    // Normalize common separators
-    const normalized = timeStr.replace(/-/g, ':');
-    const parts = normalized.split(':');
-    if (parts.length < 2) return normalized;
-    const hours = parseInt(parts[0], 10);
-    const minutes = parts[1].padStart(2, '0');
-    if (Number.isNaN(hours)) return normalized;
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const h12 = hours % 12 === 0 ? 12 : hours % 12;
-    return `${h12}:${minutes} ${ampm}`;
-  };
+      generated.push({
+        id: sched._id,
+        subject,
+        section,
+        room: sched.room,
+        type: "teaching",
+        dayOfWeek: sched.dayOfWeek - 1, 
+        startHour: sH,
+        startMinute: sM,
+        endHour: eH,
+        endMinute: eM
+      });
+    });
 
-  const renderSidebar = () => (
-    <Box w="260px" bg={sidebarBg} color="white" p={6} display="flex" flexDir="column" h="100vh" position="sticky" top="0" borderRightWidth="1px" borderColor={borderColor}>
-      <Heading size="md" mb={8} color="white" letterSpacing="tight">Faculty Portal</Heading>
-      <VStack align="stretch" spacing={2} flex="1">
-        <Button justifyContent="flex-start" variant={activeView === 'status' ? 'solid' : 'ghost'} colorScheme={activeView === 'status' ? 'blue' : 'whiteAlpha'} color={activeView === 'status' ? 'white' : 'gray.300'} onClick={() => setActiveView('status')}>My Status</Button>
-        <Button justifyContent="flex-start" variant={activeView === 'schedule' ? 'solid' : 'ghost'} colorScheme={activeView === 'schedule' ? 'blue' : 'whiteAlpha'} color={activeView === 'schedule' ? 'white' : 'gray.300'} onClick={() => setActiveView('schedule')}>My Schedule</Button>
-        <Button justifyContent="flex-start" variant={activeView === 'appointments' ? 'solid' : 'ghost'} colorScheme={activeView === 'appointments' ? 'blue' : 'whiteAlpha'} color={activeView === 'appointments' ? 'white' : 'gray.300'} onClick={() => setActiveView('appointments')}>Appointments ({myAppointments.filter(a => a.status === 'PENDING').length})</Button>
-      </VStack>
-      <VStack spacing={4} mt="auto">
-        <Button w="100%" variant="outline" color="gray.300" borderColor="gray.600" _hover={{ color: 'white', borderColor: 'gray.400' }} onClick={toggleColorMode}>{colorMode === 'light' ? 'Dark Mode' : 'Light Mode'}</Button>
-        <Button w="100%" colorScheme="red" variant="solid" onClick={() => { localStorage.clear(); navigate('/'); }}>Logout</Button>
-      </VStack>
-    </Box>
-  );
+    const approvedApts = myAppointments.filter(a => a.status === 'APPROVED');
+    approvedApts.forEach(apt => {
+        const aptDate = new Date(apt.date);
+        const dayIndex = weekDates.findIndex(wd => 
+          wd.getFullYear() === aptDate.getFullYear() && 
+          wd.getMonth() === aptDate.getMonth() && 
+          wd.getDate() === aptDate.getDate()
+        );
+        
+        if (dayIndex !== -1) {
+          const [sH, sM] = apt.time.split(':').map(Number);
+          let eH = sH + 1; 
+          if (eH > 20) eH = 20; 
+          
+          generated.push({
+              id: apt._id,
+              subject: apt.studentName,
+              section: apt.reason,
+              room: "Faculty Office", 
+              type: "appointment",
+              dayOfWeek: dayIndex,
+              startHour: sH,
+              startMinute: sM,
+              endHour: eH,
+              endMinute: sM
+          });
+        }
+    });
 
+    return generated;
+  }, [mySchedule, myAppointments, weekDates]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <Flex minH="100vh" bg={mainBg}>
-      {renderSidebar()}
-      <Box flex="1" p={10} overflowY="auto">
-        <Box mb={8}>
-          <Heading size="lg" color={textColor} letterSpacing="tight">
-            {activeView === 'status' && "Live Status & Notices"}
-            {activeView === 'schedule' && "Teaching Schedule & Future Flags"}
-            {activeView === 'appointments' && "My Appointments"}
-          </Heading>
-          <Text color={mutedText} mt={1}>Welcome back, {userName}</Text>
-        </Box>
+    <div style={{
+      display:         "flex",
+      height:          "100vh",
+      backgroundColor: C.pageBg,
+      fontFamily:      "'Segoe UI', system-ui, -apple-system, sans-serif",
+      color:           C.text,
+      overflow:        "hidden",
+    }}>
+      {/* ═══════════════════════════════════════════════════════════════════
+          SIDEBAR
+      ═══════════════════════════════════════════════════════════════════ */}
+      <aside style={{
+        width:         "196px",
+        flexShrink:    0,
+        background:    C.sidebar,
+        display:       "flex",
+        flexDirection: "column",
+        padding:       "22px 14px",
+      }}>
+        <div style={{ padding: "4px 8px 28px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 800, letterSpacing: "0.14em", color: "#fff", textTransform: "uppercase" }}>
+            Faculty Portal
+          </span>
+          <div style={{ marginTop: "7px", width: "20px", height: "3px", background: "#2563eb", borderRadius: "2px" }} />
+        </div>
 
-        {activeView === 'status' && (
-          <Box display="flex" gap={6} flexDir={{ base: 'column', md: 'row' }}>
-            <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" flex="1">
-              <Heading size="md" color={textColor} mb={6}>Update Live Status</Heading>
-              <VStack spacing={4} alignItems="flex-start">
-                <FormControl><FormLabel color={textColor}>Current Status</FormLabel>
-                  <Select value={myStatus} onChange={(e) => setMyStatus(e.target.value)} color={textColor}>
-                    <option value="AVAILABLE">Available</option><option value="IN_CLASS">In Class</option>
-                    <option value="IN_MEETING">In a Meeting</option><option value="ON_BREAK">On Break</option>
-                    <option value="OUT_OF_OFFICE">Out of Office</option><option value="ON_LEAVE">On Leave</option><option value="ABSENT">Absent</option>
-                  </Select>
-                </FormControl>
-                <FormControl><FormLabel color={textColor}>Location</FormLabel><Input value={myLocation} onChange={(e) => setMyLocation(e.target.value)} color={textColor} /></FormControl>
-                <Button colorScheme="blue" onClick={handleUpdateMyStatus} isLoading={isUpdating} w="100%">Publish Status</Button>
-              </VStack>
-            </Box>
-            <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" flex="1">
-              <Heading size="md" color={textColor} mb={6}>Post a Notice (Students)</Heading>
-              <form onSubmit={handlePostNotice}>
-                <VStack spacing={4}>
-                  <FormControl><FormLabel color={textColor}>Reason for absence / Make-up info</FormLabel>
-                    <Textarea placeholder="e.g. Attending a seminar today. Make up class on Friday." value={notice} onChange={e => setNotice(e.target.value)} rows={4} color={textColor} />
-                  </FormControl>
-                  <Button type="submit" colorScheme="blue" variant="outline" w="100%">Broadcast Notice</Button>
-                </VStack>
-              </form>
-            </Box>
-          </Box>
-        )}
+        <nav style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          {(
+            [
+              { page: "status",   label: "My Status"      },
+              { page: "schedule", label: "Master Schedule" },
+              { page: "requests", label: `Requests (${myAppointments.filter(a => a.status === 'PENDING').length})` },
+            ] as { page: Page; label: string }[]
+          ).map(({ page, label }) => {
+            const active = activePage === page;
+            return (
+              <button
+                key={page}
+                onClick={() => setActivePage(page)}
+                style={{
+                  ...btnBase,
+                  display: "flex", alignItems: "center", gap: "10px", padding: "9px 10px", borderRadius: "7px",
+                  background: active ? C.navBg : "transparent",
+                  color: active ? C.navActive : C.navText,
+                  fontWeight: active ? 600 : 400, fontSize: "13px", textAlign: "left",
+                  borderLeft: active ? "2px solid #2563eb" : "2px solid transparent",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: active ? "#60a5fa" : "transparent", border: active ? "none" : "1.5px solid #3a5373", flexShrink: 0 }} />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
 
-        {activeView === 'schedule' && (
-          <Box display="flex" gap={6} flexDir="column">
-            <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
-              <Heading size="md" color={textColor} mb={6}>Assigned Blocks</Heading>
-              <TableContainer><Table size="sm" variant="simple">
-                <Thead><Tr><Th color={mutedText}>Day</Th><Th color={mutedText}>Time</Th><Th color={mutedText}>Subject</Th><Th color={mutedText}>Room</Th></Tr></Thead>
-                <Tbody>
-                  {mySchedule.map((sched, index) => (
-                    <Tr key={index}><Td fontWeight="bold" color={textColor}>{getDayName(sched.dayOfWeek)}</Td><Td color={textColor}>{sched.startTime} - {sched.endTime}</Td><Td color={textColor}>{sched.subject}</Td><Td color={textColor}>{sched.room}</Td></Tr>
+        <div style={{ flex: 1 }} />
+
+        <button
+          onClick={toggleColorMode} 
+          style={{
+            ...btnBase,
+            padding: "9px 12px", borderRadius: "7px",
+            border: `1px solid ${dk ? "#1e3048" : "rgba(255,255,255,0.12)"}`,
+            background: "transparent", color: C.navText, fontSize: "12px", textAlign: "left",
+            display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px",
+          }}
+        >
+          <span>{dk ? "☀" : "☾"}</span>
+          {dk ? "Light Mode" : "Dark Mode"}
+        </button>
+
+        <button 
+          onClick={() => { localStorage.clear(); navigate('/'); }}
+          style={{ ...btnBase, padding: "9px 12px", borderRadius: "7px", background: "#dc2626", color: "#fff", fontSize: "12px", fontWeight: 600 }}
+        >
+          Logout
+        </button>
+      </aside>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          MAIN CONTENT
+      ═══════════════════════════════════════════════════════════════════ */}
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+
+        {/* ───────────────────────────────────────────────────────────────
+            PAGE: MASTER SCHEDULE
+        ─────────────────────────────────────────────────────────────── */}
+        {activePage === "schedule" && (
+          <Box display="flex" flexDirection="column" h="100%" overflowY="auto">
+            {/* Toolbar */}
+            <div style={{ padding: "14px 24px", borderBottom: `1px solid ${C.border}`, background: C.surface, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, flexWrap: "wrap", gap: "12px" }}>
+              <div>
+                <h1 style={{ fontSize: "16px", fontWeight: 700, margin: 0, letterSpacing: "-0.015em" }}>My Itinerary</h1>
+                <p style={{ fontSize: "11px", color: C.textMid, margin: "2px 0 0" }}>{weekLabel}</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <div style={{ width: "1px", height: "24px", background: C.border }} />
+                <button onClick={() => setWeekOffset(0)} style={{ ...btnBase, padding: "6px 12px", borderRadius: "6px", border: `1px solid ${C.border}`, background: C.surface, color: C.textMid, fontSize: "12px" }}>Today</button>
+                <div style={{ display: "flex" }}>
+                  {(["‹", "›"] as const).map((arrow, i) => (
+                    <button key={arrow} onClick={() => setWeekOffset(w => w + (i === 0 ? -1 : 1))} style={{ ...btnBase, width: "30px", height: "30px", border: `1px solid ${C.border}`, borderRadius: i === 0 ? "6px 0 0 6px" : "0 6px 6px 0", borderRight: i === 0 ? "none" : `1px solid ${C.border}`, background: C.surface, color: C.textMid, fontSize: "17px", lineHeight: "1", display: "flex", alignItems: "center", justifyContent: "center" }}>{arrow}</button>
                   ))}
-                  {mySchedule.length === 0 && <Tr><Td colSpan={4} textAlign="center" py={4} color={mutedText}>No schedule assigned.</Td></Tr>}
-                </Tbody>
-              </Table></TableContainer>
-            </Box>
-            <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
-              <Heading size="md" color="red.500" mb={6}>Flag Future Unavailability</Heading>
-              <form onSubmit={handleFlagDate}>
-                <HStack spacing={4} alignItems="flex-end">
-                  <FormControl><FormLabel color={textColor}>Date</FormLabel><Input type="date" value={flagDate} onChange={e => setFlagDate(e.target.value)} color={textColor} /></FormControl>
-                  <FormControl><FormLabel color={textColor}>Reason</FormLabel><Input value={flagReason} onChange={e => setFlagReason(e.target.value)} placeholder="e.g. Approved Leave" color={textColor} /></FormControl>
-                  <Button type="submit" colorScheme="red" px={8}>Flag Date</Button>
-                </HStack>
-              </form>
-            </Box>
+                </div>
+                <div style={{ display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" }}>
+                  {(["week", "day"] as ViewMode[]).map(v => (
+                    <button key={v} onClick={() => setViewMode(v)} style={{ ...btnBase, padding: "6px 14px", background: viewMode === v ? "#2563eb" : C.surface, color: viewMode === v ? "#fff" : C.textMid, fontSize: "12px", fontWeight: viewMode === v ? 600 : 400, textTransform: "capitalize" }}>{v}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Schedule Grid */}
+            <div style={{ padding: "20px", display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ background: C.surface, borderRadius: "10px", border: `1px solid ${C.border}`, overflow: "hidden", minWidth: "520px" }}>
+                {/* Day-header row */}
+                <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, background: C.surfaceAlt }}>
+                  <div style={{ width: "58px", flexShrink: 0, borderRight: `1px solid ${C.border}` }} />
+                  {visibleDayIndices.map((di, col) => {
+                    const date = weekDates[di];
+                    const active = isToday(date) && weekOffset === 0;
+                    return (
+                      <div key={di} onClick={() => { setFocusDay(di); setViewMode("day"); }} style={{ flex: 1, padding: "10px 8px 9px", textAlign: "center", cursor: "pointer", userSelect: "none", borderRight: col < visibleDayIndices.length - 1 ? `1px solid ${C.border}` : "none", background: active ? C.todayHead : "transparent", borderTop: active ? `2px solid ${C.todayBorder}` : "2px solid transparent" }}>
+                        <div style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: active ? C.todayBorder : C.textMid, marginBottom: "3px" }}>{DAY_LABELS[di]}</div>
+                        <div style={{ fontSize: "19px", fontWeight: active ? 700 : 400, color: active ? C.todayBorder : C.text, lineHeight: 1 }}>{date.getDate()}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Body */}
+                <div style={{ display: "flex", height: `${GRID_HEIGHT}px`, position: "relative" }}>
+                  <div style={{ width: "58px", flexShrink: 0, borderRight: `1px solid ${C.border}`, position: "relative" }}>
+                    {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
+                      const hour = START_HOUR + Math.floor(i / 2);
+                      const isHour = i % 2 === 0;
+                      return (
+                        <div key={i} style={{ position: "absolute", top: `${i * SLOT_PX}px`, height: `${SLOT_PX}px`, width: "100%", borderBottom: `1px solid ${isHour ? C.border : C.borderFaint}`, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", paddingRight: "8px", paddingTop: "4px", boxSizing: "border-box" }}>
+                          {isHour && (<span style={{ fontSize: "9px", color: C.textMid, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatHour(hour)}</span>)}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {visibleDayIndices.map((di, col) => {
+                    const date = weekDates[di];
+                    const active = isToday(date) && weekOffset === 0;
+                    const dayEvts = dynamicEvents.filter(e => e.dayOfWeek === di);
+                    const isLast = col === visibleDayIndices.length - 1;
+
+                    return (
+                      <div 
+                        key={di} 
+                        // === FIX: This is the correct Zoom Wrapper! ===
+                        onClick={() => {
+                          if (viewMode === "week") {
+                            setFocusDay(di);
+                            setViewMode("day");
+                          }
+                        }}
+                        style={{ 
+                          flex: 1, 
+                          position: "relative", 
+                          borderRight: isLast ? "none" : `1px solid ${C.border}`, 
+                          background: active ? C.todayBand : "transparent",
+                          cursor: viewMode === "week" ? "zoom-in" : "default",
+                          transition: "background 0.2s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          if (viewMode === "week" && !active) e.currentTarget.style.background = dk ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (viewMode === "week" && !active) e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        {Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
+                          <div key={i} style={{ position: "absolute", top: `${i * SLOT_PX}px`, width: "100%", height: `${SLOT_PX}px`, borderBottom: `1px solid ${i % 2 === 0 ? C.border : C.borderFaint}`, pointerEvents: "none" }} />
+                        ))}
+                        
+                        {/* === FIX: This inner loop renders the colored boxes! === */}
+                        {dayEvts.map(event => {
+                          const { top, height } = getEventPos(event);
+                          const isTeach = event.type === "teaching";
+                          const accent = isTeach ? C.teach : C.appt;
+                          const bg = isTeach ? C.teachBg : C.apptBg;
+                          const textCol = isTeach ? C.teachText : C.apptText;
+
+                          return (
+                            <div key={event.id} title={`${event.subject} · ${event.section} · ${event.room}`} style={{ position: "absolute", left: "3px", right: "3px", top: `${top}px`, height: `${height}px`, background: bg, borderLeft: `3px solid ${accent}`, borderRadius: "4px", padding: "4px 7px", overflow: "hidden", cursor: "pointer", zIndex: 1, boxSizing: "border-box" }}>
+                              <div style={{ fontSize: "11px", fontWeight: 700, color: textCol, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{event.subject}</div>
+                              {height > 44 && (<div style={{ fontSize: "10px", color: textCol, opacity: 0.72, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{event.section}</div>)}
+                              {height > 62 && (<div style={{ fontSize: "9.5px", color: textCol, opacity: 0.55, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "1px" }}>{event.room}</div>)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Legend & Emergency Form */}
+              <Flex justifyContent="space-between" alignItems="center">
+                <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+                  <span style={{ fontSize: "10px", color: C.textMid, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Legend</span>
+                  {[{ color: C.teach, label: "Teaching Block" }, { color: C.appt, label: "Approved Appointment" }].map(({ color, label }) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{ width: "10px", height: "10px", borderRadius: "3px", background: color }} />
+                      <span style={{ fontSize: "11px", color: C.textMid }}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <Box bg={cardBg} p={4} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
+                  <form onSubmit={handleFlagDate}>
+                    <HStack spacing={4} alignItems="flex-end">
+                      <FormControl><FormLabel color={textColor} fontSize="sm">Emergency Absence</FormLabel><Input type="date" size="sm" value={flagDate} onChange={e => setFlagDate(e.target.value)} color={textColor} /></FormControl>
+                      <ChakraButton type="submit" size="sm" colorScheme="red" px={6}>Mass Cancel Appts</ChakraButton>
+                    </HStack>
+                  </form>
+                </Box>
+              </Flex>
+
+            </div>
           </Box>
         )}
 
-        {activeView === 'appointments' && (
-          <Box display="flex" flexDir="column" gap={6}>
-            
-            {/* GOOGLE CALENDAR VIEW */}
-            <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" h="500px">
-              <Heading size="md" color={textColor} mb={4}>My Calendar Overview</Heading>
-              <Calendar
-                localizer={localizer}
-                events={myAppointments
-                  .filter(apt => apt.status === 'APPROVED') // ONLY show approved ones on the calendar!
-                  .map(apt => {
-                    // Convert the "YYYY-MM-DD" and a time like "HH:MM" or "HH-MM" into Date objects
-                    const [yStr, mStr, dStr] = (apt.date || '').split('-');
-                    const year = parseInt(yStr, 10) || 0;
-                    const month = parseInt(mStr, 10) || 1;
-                    const day = parseInt(dStr, 10) || 1;
-
-                    const normalizedTime = (apt.time || '').replace(/-/g, ':');
-                    const tParts = normalizedTime.split(':');
-                    const hour = parseInt(tParts[0] || '0', 10) || 0;
-                    const minute = parseInt(tParts[1] || '0', 10) || 0;
-
-                    const startDate = new Date(year, month - 1, day, hour, minute);
-                    const endDate = new Date(startDate.getTime() + 60 * 60000); // Assumes meetings are 1 hour long
-
-                    return {
-                      title: `Meeting: ${apt.studentName}`,
-                      start: startDate,
-                      end: endDate,
-                    };
-                  })}
-                startAccessor="start"
-                endAccessor="end"
-                style={{ height: '100%', color: colorMode === 'light' ? 'black' : 'white' }}
-                views={['month', 'week', 'day']}
-                defaultView="week"
-              />
+        {/* ───────────────────────────────────────────────────────────────
+            PAGE: MY STATUS (Chakra UI Form)
+        ─────────────────────────────────────────────────────────────── */}
+        {activePage === "status" && (
+          <div style={{ padding: "32px", overflowY: "auto" }}>
+            <h1 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "20px", color: textColor }}>My Status & Notices</h1>
+            <Box display="flex" gap={6} flexDirection={{ base: 'column', md: 'row' }}>
+              
+              {/* FIX: Removed the incorrect h="500px" limit from here! */}
+              <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" flex="1">
+                <Heading size="md" color={textColor} mb={6}>Update Live Status</Heading>
+                <VStack spacing={4} alignItems="flex-start">
+                  <FormControl><FormLabel color={textColor}>Current Status</FormLabel>
+                    <Select value={myStatus} onChange={(e) => setMyStatus(e.target.value)} color={textColor}>
+                      <option value="AVAILABLE">Available</option><option value="IN_CLASS">In Class</option>
+                      <option value="IN_MEETING">In a Meeting</option><option value="ON_BREAK">On Break</option>
+                      <option value="OUT_OF_OFFICE">Out of Office</option><option value="ON_LEAVE">On Leave</option><option value="ABSENT">Absent</option>
+                    </Select>
+                  </FormControl>
+                  <FormControl><FormLabel color={textColor}>Location</FormLabel><Input value={myLocation} onChange={(e) => setMyLocation(e.target.value)} color={textColor} /></FormControl>
+                  <ChakraButton colorScheme="blue" onClick={handleUpdateMyStatus} isLoading={isUpdating} w="100%">Publish Status</ChakraButton>
+                </VStack>
+              </Box>
+              
+              <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" flex="1">
+                <Heading size="md" color={textColor} mb={6}>Post a Notice (Students)</Heading>
+                <form onSubmit={handlePostNotice}>
+                  <VStack spacing={4}>
+                    <FormControl><FormLabel color={textColor}>Reason for absence / Make-up info</FormLabel>
+                      <Textarea placeholder="e.g. Attending a seminar today. Make up class on Friday." value={notice} onChange={e => setNotice(e.target.value)} rows={4} color={textColor} />
+                    </FormControl>
+                    <ChakraButton type="submit" colorScheme="blue" variant="outline" w="100%">Broadcast Notice</ChakraButton>
+                  </VStack>
+                </form>
+              </Box>
             </Box>
+          </div>
+        )}
 
-            {/* PENDING REQUESTS TABLE */}
+        {/* ───────────────────────────────────────────────────────────────
+            PAGE: REQUESTS (Chakra UI Table)
+        ─────────────────────────────────────────────────────────────── */}
+        {activePage === "requests" && (
+          <div style={{ padding: "32px", overflowY: "auto" }}>
+            <h1 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "20px", color: textColor }}>Pending Appointment Requests</h1>
             <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
-               <Heading size="md" color={textColor} mb={4}>Pending Requests & History</Heading>
                <Table variant="simple" size="sm">
                 <Thead><Tr><Th color={mutedText}>Student</Th><Th color={mutedText}>Date/Time</Th><Th color={mutedText}>Reason</Th><Th color={mutedText}>Status</Th><Th color={mutedText}>Action</Th></Tr></Thead>
                 <Tbody>
@@ -323,21 +616,21 @@ export default function FacultyDashboard() {
                       <Td>
                         {apt.status === 'PENDING' && (
                           <HStack spacing={2}>
-                            {/* Updated to pass the full 'apt' object into our Smart Engine */}
-                            <Button size="xs" colorScheme="green" onClick={() => updateAppointmentStatus(apt, 'APPROVED')}>Approve</Button>
-                            <Button size="xs" colorScheme="red" onClick={() => updateAppointmentStatus(apt, 'REJECTED')}>Reject</Button>
+                            <ChakraButton size="xs" colorScheme="green" onClick={() => updateAppointmentStatus(apt, 'APPROVED')}>Approve</ChakraButton>
+                            <ChakraButton size="xs" colorScheme="red" onClick={() => updateAppointmentStatus(apt, 'REJECTED')}>Reject</ChakraButton>
                           </HStack>
                         )}
                       </Td>
                     </Tr>
                   ))}
-                  {myAppointments.length === 0 && <Tr><Td colSpan={5} textAlign="center" py={4} color={mutedText}>No appointments requested.</Td></Tr>}
+                  {myAppointments.length === 0 && <Tr><Td colSpan={5} textAlign="center" py={10} color={mutedText}>No appointments requested.</Td></Tr>}
                 </Tbody>
               </Table>
             </Box>
-          </Box>
+          </div>
         )}
-      </Box>
-    </Flex>
+
+      </main>
+    </div>
   );
 }

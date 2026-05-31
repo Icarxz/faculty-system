@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, Heading, Text, Button, VStack, Input, FormControl, FormLabel, 
+  Box, Heading, Text, Button as ChakraButton, VStack, Input, FormControl, FormLabel, 
   useToast, Select, HStack, Flex, Divider, Table, Thead, Tbody, Tr, Th, Td, Badge, useColorMode, useColorModeValue,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, useDisclosure // NEW IMPORTS
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, useDisclosure 
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 
-// HELPER: Convert military time (14:00) to standard time (2:00 PM)
 export const formatTime = (timeStr: string) => {
   if (!timeStr) return '';
   const [hour, minute] = timeStr.split(':');
@@ -22,14 +21,14 @@ export default function AdminDashboard() {
   const toast = useToast();
   const userName = localStorage.getItem('userName');
   const { colorMode, toggleColorMode } = useColorMode();
-  const { isOpen, onOpen, onClose } = useDisclosure(); // Modal controls for QR
+  const { isOpen, onOpen, onClose } = useDisclosure(); 
 
-  const [activeView, setActiveView] = useState('home');
+  const [activePage, setActivePage] = useState('home');
   const [facultyList, setFacultyList] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [role, setRole] = useState('FACULTY'); 
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [selectedQr, setSelectedQr] = useState({ hash: '', name: '' }); // State for viewing existing QR
+  const [selectedQr, setSelectedQr] = useState({ hash: '', name: '' }); 
 
   // Form States
   const [name, setName] = useState('');
@@ -47,12 +46,22 @@ export default function AdminDashboard() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
 
-  const mainBg = useColorModeValue('gray.50', 'gray.900');
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
-  const textColor = useColorModeValue('gray.900', 'white');
-  const mutedText = useColorModeValue('gray.500', 'gray.400');
-  const sidebarBg = useColorModeValue('black', 'gray.900');
+  // ── Custom Theme Tokens ───────────────────────────────────────────────
+  const dk = colorMode === 'dark';
+  const C = {
+    pageBg:    dk ? "#0c1421" : "#eef2f7",
+    sidebar:   dk ? "#070e1b" : "#0f2240",
+    text:      dk ? "#e8f0fe" : "#0f2240",
+    navText:   dk ? "#7a93b0" : "#8eaecb",
+    navActive: dk ? "#ffffff" : "#ffffff",
+    navBg:     dk ? "rgba(59,130,246,0.18)" : "rgba(255,255,255,0.10)",
+  };
+  const btnBase: React.CSSProperties = { border: "none", cursor: "pointer", fontFamily: "inherit", letterSpacing:"0.01em" };
+
+  const cardBg = useColorModeValue('#ffffff', '#111d30');
+  const borderColor = useColorModeValue('#dde3ec', '#1e3048');
+  const textColor = useColorModeValue('#0f2240', '#e8f0fe');
+  const mutedText = useColorModeValue('#6b7fa0', '#7a93b0');
 
   const fetchAllData = () => {
     fetch('http://localhost:5000/api/faculty/status').then(res => res.json()).then(data => setFacultyList(data));
@@ -95,41 +104,28 @@ export default function AdminDashboard() {
     } catch (err) { toast({ title: 'Error adding schedule', status: 'error' }); }
   };
 
-  // --- SMART APPROVAL ENGINE FOR ADMIN ---
   const updateAppointmentStatus = async (targetApt: any, newStatus: string) => {
     if (newStatus === 'APPROVED') {
-      
-      // CRITICAL DIFFERENCE FROM FACULTY: The Admin sees EVERYONE. 
-      // We must filter by Date AND by the specific Faculty ID!
-      const approvedThatDay = appointments.filter(
-        a => a.status === 'APPROVED' && 
-             a.date === targetApt.date && 
-             a.facultyId?._id === targetApt.facultyId?._id
-      );
-
+      const approvedThatDay = appointments.filter(a => a.status === 'APPROVED' && a.date === targetApt.date && a.facultyId?._id === targetApt.facultyId?._id);
       const timeToMinutes = (timeStr: string) => {
         const [hours, minutes] = timeStr.split(':').map(Number);
         return (hours * 60) + minutes;
       };
-
       const targetMinutes = timeToMinutes(targetApt.time);
 
       for (let existingApt of approvedThatDay) {
         const existingMinutes = timeToMinutes(existingApt.time);
         const timeDifference = Math.abs(targetMinutes - existingMinutes);
-
         if (timeDifference === 0) {
           toast({ title: "Overlap Blocked", description: `This faculty already has an appointment at this exact time!`, status: "error", duration: 5000 });
-          return; // Blocks the approval
+          return; 
         }
-
         if (timeDifference <= 60) {
           const isConfirmed = window.confirm(`WARNING: This is only ${timeDifference} minutes away from another approved meeting for this faculty. Proceed?`);
           if (!isConfirmed) return; 
         }
       }
     }
-
     try {
       const response = await fetch(`http://localhost:5000/api/faculty/appointment/${targetApt._id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -142,42 +138,136 @@ export default function AdminDashboard() {
     } catch (error) {}
   };
 
-  const renderSidebar = () => (
-    <Box w="260px" bg={sidebarBg} color="white" p={6} display="flex" flexDir="column" h="100vh" position="sticky" top="0" borderRightWidth="1px" borderColor={borderColor}>
-      <Heading size="md" mb={8} color="white" letterSpacing="tight">Admin Console</Heading>
-      <VStack align="stretch" spacing={2} flex="1">
-        <Button justifyContent="flex-start" variant={activeView === 'home' ? 'solid' : 'ghost'} colorScheme={activeView === 'home' ? 'blue' : 'whiteAlpha'} color={activeView === 'home' ? 'white' : 'gray.300'} onClick={() => setActiveView('home')}>Provisioning</Button>
-        <Button justifyContent="flex-start" variant={activeView === 'faculty' ? 'solid' : 'ghost'} colorScheme={activeView === 'faculty' ? 'blue' : 'whiteAlpha'} color={activeView === 'faculty' ? 'white' : 'gray.300'} onClick={() => setActiveView('faculty')}>Roster Management</Button>
-        <Button justifyContent="flex-start" variant={activeView === 'appointments' ? 'solid' : 'ghost'} colorScheme={activeView === 'appointments' ? 'blue' : 'whiteAlpha'} color={activeView === 'appointments' ? 'white' : 'gray.300'} onClick={() => setActiveView('appointments')}>Appointments ({appointments.filter(a => a.status === 'PENDING').length})</Button>
-        <Button justifyContent="flex-start" variant={activeView === 'verification' ? 'solid' : 'ghost'} colorScheme={activeView === 'verification' ? 'blue' : 'whiteAlpha'} color={activeView === 'verification' ? 'white' : 'gray.300'} onClick={() => setActiveView('verification')}>Verification Queue</Button>
-      </VStack>
-      <VStack spacing={4} mt="auto">
-        <Button w="100%" variant="outline" color="gray.300" borderColor="gray.600" _hover={{ color: 'white', borderColor: 'gray.400' }} onClick={toggleColorMode}>{colorMode === 'light' ? 'Dark Mode' : 'Light Mode'}</Button>
-        <Button w="100%" colorScheme="red" variant="solid" onClick={() => { localStorage.clear(); navigate('/'); }}>Logout</Button>
-      </VStack>
-    </Box>
-  );
-
   return (
-    <Flex minH="100vh" bg={mainBg}>
-      {renderSidebar()}
+    <Flex minH="100vh" bg={C.pageBg} fontFamily="'Segoe UI', system-ui, sans-serif" color={C.text}>
+      
+      {/* ── Custom Sidebar ── */}
+      <aside style={{ width: "196px", flexShrink: 0, background: C.sidebar, display: "flex", flexDirection: "column", padding: "22px 14px" }}>
+        <div style={{ padding: "4px 8px 28px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 800, letterSpacing: "0.14em", color: "#fff", textTransform: "uppercase" }}>Admin Console</span>
+          <div style={{ marginTop: "7px", width: "20px", height: "3px", background: "#2563eb", borderRadius: "2px" }} />
+        </div>
 
+        <nav style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          {[
+            { page: "home", label: "Provisioning" },
+            { page: "faculty", label: "Roster Management" },
+            { page: "appointments", label: `Appointments (${appointments.filter(a => a.status === 'PENDING').length})` },
+            { page: "verification", label: "Verification Queue" }
+          ].map(({ page, label }) => {
+            const active = activePage === page;
+            return (
+              <button key={page} onClick={() => setActivePage(page)} style={{
+                  ...btnBase, display: "flex", alignItems: "center", gap: "10px", padding: "9px 10px", borderRadius: "7px",
+                  background: active ? C.navBg : "transparent", color: active ? C.navActive : C.navText,
+                  fontWeight: active ? 600 : 400, fontSize: "13px", textAlign: "left",
+                  borderLeft: active ? "2px solid #2563eb" : "2px solid transparent", transition: "all 0.15s ease",
+                }}>
+                <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: active ? "#60a5fa" : "transparent", border: active ? "none" : "1.5px solid #3a5373", flexShrink: 0 }} />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div style={{ flex: 1 }} />
+        <button onClick={toggleColorMode} style={{ ...btnBase, padding: "9px 12px", borderRadius: "7px", border: `1px solid ${dk ? "#1e3048" : "rgba(255,255,255,0.12)"}`, background: "transparent", color: C.navText, fontSize: "12px", textAlign: "left", display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+          <span>{dk ? "☀" : "☾"}</span> {dk ? "Light Mode" : "Dark Mode"}
+        </button>
+        <button onClick={() => { localStorage.clear(); navigate('/'); }} style={{ ...btnBase, padding: "9px 12px", borderRadius: "7px", background: "#dc2626", color: "#fff", fontSize: "12px", fontWeight: 600 }}>Logout</button>
+      </aside>
+
+      {/* ── Main Content ── */}
       <Box flex="1" p={10} overflowY="auto">
         <Box mb={8}>
           <Heading size="lg" color={textColor} letterSpacing="tight">
-            {activeView === 'home' && "System Provisioning"}
-            {activeView === 'faculty' && "Faculty Roster & Live Status"}
-            {activeView === 'appointments' && "Appointment Management"}
-            {activeView === 'verification' && "Account Verification Queue"}
+            {activePage === 'home' && "System Provisioning"}
+            {activePage === 'faculty' && "Faculty Roster & Live Status"}
+            {activePage === 'appointments' && "Appointment Management"}
+            {activePage === 'verification' && "Account Verification Queue"}
           </Heading>
           <Text color={mutedText} mt={1}>Welcome back, {userName}</Text>
         </Box>
 
-        {activeView === 'home' && (
-          {/* ... [Keep your existing 'home' view code here exactly as it is] ... */}
+        {activePage === 'home' && (
+          <Box display="flex" gap={8} flexDir={{ base: 'column', xl: 'row' }}>
+            <Box flex="1" display="flex" flexDir="column" gap={6}>
+              <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
+                <Heading size="sm" mb={6} textTransform="uppercase" color={mutedText}>1. Provision Faculty Account</Heading>
+                <form onSubmit={handleAddFaculty}>
+                  <VStack spacing={4}>
+                    <FormControl isRequired><FormLabel color={textColor}>Full Name</FormLabel><Input value={name} onChange={(e) => setName(e.target.value)} color={textColor} borderColor={borderColor}/></FormControl>
+                    
+                    <HStack w="100%">
+                      <FormControl isRequired>
+                        <FormLabel color={textColor}>Email</FormLabel>
+                        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} color={textColor} borderColor={borderColor}/>
+                      </FormControl>
+                      
+                      <FormControl isRequired>
+                        <FormLabel color={textColor}>Access Level (Role)</FormLabel>
+                        <Select value={role} onChange={(e) => setRole(e.target.value)} color={textColor} borderColor={borderColor}>
+                          <option value="FACULTY">Faculty Member</option>
+                          <option value="DEAN">College Dean</option>
+                          <option value="ADMIN">System Admin</option>
+                        </Select>
+                      </FormControl>
+                    </HStack>
+
+                    <HStack w="100%">
+                      <FormControl isRequired>
+                        <FormLabel color={textColor}>Program & Position</FormLabel>
+                        <Input value={programPosition} onChange={(e) => setProgramPosition(e.target.value)} color={textColor} placeholder="e.g. Dean, CCIS" borderColor={borderColor}/>
+                      </FormControl>
+                      <FormControl isRequired>
+                        <FormLabel color={textColor}>Room / Office</FormLabel>
+                        <Input value={room} onChange={(e) => setRoom(e.target.value)} color={textColor} placeholder="e.g. Dean's Office" borderColor={borderColor}/>
+                      </FormControl>
+                    </HStack>
+                    
+                    <ChakraButton type="submit" colorScheme="blue" w="100%" isLoading={loading}>Generate Account & QR</ChakraButton>
+                  </VStack>
+                </form>
+              </Box>
+
+              <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
+                <Heading size="sm" mb={6} textTransform="uppercase" color={mutedText}>2. Assign Teaching Schedule</Heading>
+                <form onSubmit={handleAddSchedule}>
+                  <VStack spacing={4}>
+                    <HStack w="100%">
+                      <FormControl isRequired><FormLabel color={textColor}>Instructor</FormLabel><Select placeholder="Choose..." value={selectedFacultyId} onChange={(e) => setSelectedFacultyId(e.target.value)} color={textColor} borderColor={borderColor}>{facultyList.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}</Select></FormControl>
+                      <FormControl isRequired><FormLabel color={textColor}>Subject</FormLabel><Input value={subject} onChange={e => setSubject(e.target.value)} color={textColor} borderColor={borderColor}/></FormControl>
+                    </HStack>
+                    <HStack w="100%">
+                      <FormControl isRequired><FormLabel color={textColor}>Day</FormLabel><Select value={dayOfWeek} onChange={e => setDayOfWeek(e.target.value)} color={textColor} borderColor={borderColor}><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></Select></FormControl>
+                      <FormControl isRequired><FormLabel color={textColor}>Room</FormLabel><Input value={schedRoom} onChange={e => setSchedRoom(e.target.value)} color={textColor} borderColor={borderColor}/></FormControl>
+                    </HStack>
+                    <HStack w="100%">
+                      <FormControl isRequired><FormLabel color={textColor}>Start</FormLabel><Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} color={textColor} borderColor={borderColor}/></FormControl>
+                      <FormControl isRequired><FormLabel color={textColor}>End</FormLabel><Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} color={textColor} borderColor={borderColor}/></FormControl>
+                    </HStack>
+                    <ChakraButton type="submit" colorScheme="gray" variant="outline" w="100%">Assign Class Block</ChakraButton>
+                  </VStack>
+                </form>
+              </Box>
+            </Box>
+
+            <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" flex="1" minH="400px" display="flex" flexDir="column" alignItems="center" justifyContent="center">
+              {generatedQr ? (
+                <VStack spacing={4}>
+                  <Heading size="md" color="green.500">Provisioning Complete</Heading>
+                  <Text textAlign="center" color={textColor}>Scan to authenticate:<br/><b>{newFacultyName}</b></Text>
+                  <Box p={4} bg="white" borderWidth="2px" borderRadius="lg"><QRCodeSVG value={generatedQr} size={200} /></Box>
+                  <ChakraButton size="sm" variant="outline" colorScheme="blue" onClick={() => window.print()}>Print Hardware Key (QR)</ChakraButton>
+                </VStack>
+              ) : (
+                <Text color={mutedText} textAlign="center">Fill provisioning form to generate authentication token.</Text>
+              )}
+            </Box>
+          </Box>
         )}
 
-        {activeView === 'faculty' && (
+        {activePage === 'faculty' && (
           <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
             <Table variant="simple" size="sm">
               <Thead><Tr><Th color={mutedText}>Name</Th><Th color={mutedText}>Position</Th><Th color={mutedText}>Live Status</Th><Th color={mutedText}>Authentication Key</Th></Tr></Thead>
@@ -188,10 +278,9 @@ export default function AdminDashboard() {
                     <Td color={textColor}>{prof.programPosition}</Td>
                     <Td><Badge colorScheme={prof.currentStatus === 'AVAILABLE' ? 'green' : 'gray'}>{prof.currentStatus}</Badge></Td>
                     <Td>
-                      {/* NEW: Button to view existing QR Code */}
-                      <Button size="xs" colorScheme="blue" variant="outline" onClick={() => { setSelectedQr({ hash: prof.qrHash, name: prof.name }); onOpen(); }}>
+                      <ChakraButton size="xs" colorScheme="blue" variant="outline" onClick={() => { setSelectedQr({ hash: prof.qrHash, name: prof.name }); onOpen(); }}>
                         View QR
-                      </Button>
+                      </ChakraButton>
                     </Td>
                   </Tr>
                 ))}
@@ -200,7 +289,7 @@ export default function AdminDashboard() {
           </Box>
         )}
 
-        {activeView === 'appointments' && (
+        {activePage === 'appointments' && (
           <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
             <Table variant="simple" size="sm">
               <Thead><Tr><Th color={mutedText}>Student</Th><Th color={mutedText}>Target Faculty</Th><Th color={mutedText}>Date/Time</Th><Th color={mutedText}>Reason</Th><Th color={mutedText}>Status</Th><Th color={mutedText}>Action</Th></Tr></Thead>
@@ -209,16 +298,14 @@ export default function AdminDashboard() {
                   <Tr key={apt._id}>
                     <Td fontWeight="bold" color={textColor}>{apt.studentName} ({apt.studentSection})</Td>
                     <Td color={textColor}>{apt.facultyId ? apt.facultyId.name : 'Unknown'}</Td>
-                    {/* NEW: Time formatting applied here */}
                     <Td color={textColor}>{apt.date} {formatTime(apt.time)}</Td>
                     <Td maxW="200px" isTruncated color={textColor}>{apt.reason}</Td>
                     <Td><Badge colorScheme={apt.status === 'APPROVED' ? 'green' : apt.status === 'REJECTED' ? 'red' : 'yellow'}>{apt.status}</Badge></Td>
                     <Td>
                       {apt.status === 'PENDING' && (
                         <HStack spacing={2}>
-                          {/* NEW: Passing the whole 'apt' object, not just ID */}
-                          <Button size="xs" colorScheme="green" onClick={() => updateAppointmentStatus(apt, 'APPROVED')}>Approve</Button>
-                          <Button size="xs" colorScheme="red" onClick={() => updateAppointmentStatus(apt, 'REJECTED')}>Reject</Button>
+                          <ChakraButton size="xs" colorScheme="green" onClick={() => updateAppointmentStatus(apt, 'APPROVED')}>Approve</ChakraButton>
+                          <ChakraButton size="xs" colorScheme="red" onClick={() => updateAppointmentStatus(apt, 'REJECTED')}>Reject</ChakraButton>
                         </HStack>
                       )}
                     </Td>
@@ -228,9 +315,31 @@ export default function AdminDashboard() {
             </Table>
           </Box>
         )}
+
+        {activePage === 'verification' && (
+          <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
+             <Text mb={4} color={mutedText}>
+               <em>Note for Panel:</em> This queue displays accounts awaiting institutional verification. Currently, provisioning is handled manually by the Admin.
+             </Text>
+             <Divider mb={4} borderColor={borderColor}/>
+            <Table variant="simple" size="sm">
+              <Thead><Tr><Th color={mutedText}>Name</Th><Th color={mutedText}>Email</Th><Th color={mutedText}>Requested Role</Th><Th color={mutedText}>System Status</Th><Th color={mutedText}>Action</Th></Tr></Thead>
+              <Tbody>
+                {allUsers.map(user => (
+                  <Tr key={user._id}>
+                    <Td fontWeight="bold" color={textColor}>{user.name}</Td>
+                    <Td color={textColor}>{user.email}</Td>
+                    <Td><Badge colorScheme="blue">{user.role}</Badge></Td>
+                    <Td><Badge colorScheme="green">VERIFIED (Auto-Provisioned)</Badge></Td>
+                    <Td><ChakraButton size="xs" isDisabled>Revoke Access</ChakraButton></Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          </Box>
+        )}
       </Box>
 
-      {/* NEW: Reusable Modal to display existing QR Codes */}
       <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay />
         <ModalContent>
@@ -240,7 +349,7 @@ export default function AdminDashboard() {
             <Box p={4} bg="white" borderWidth="2px" borderRadius="lg" mb={4}>
               <QRCodeSVG value={selectedQr.hash} size={250} />
             </Box>
-            <Button colorScheme="blue" onClick={() => window.print()}>Print QR Key</Button>
+            <ChakraButton colorScheme="blue" onClick={() => window.print()}>Print QR Key</ChakraButton>
           </ModalBody>
         </ModalContent>
       </Modal>

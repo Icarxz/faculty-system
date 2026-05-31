@@ -13,12 +13,12 @@ export default function Login() {
   const navigate = useNavigate();
   const toast = useToast();
 
-  // Dynamic Theme Colors
-  const bg = useColorModeValue('gray.50', 'gray.900');
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const textColor = useColorModeValue('gray.900', 'white');
-  const mutedText = useColorModeValue('gray.500', 'gray.400');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  // FIX: Synced Theme Colors with the new Faculty Dashboard palette
+  const bg = useColorModeValue('#eef2f7', '#0c1421');
+  const cardBg = useColorModeValue('#ffffff', '#111d30');
+  const textColor = useColorModeValue('#0f2240', '#e8f0fe');
+  const mutedText = useColorModeValue('#6b7fa0', '#7a93b0');
+  const borderColor = useColorModeValue('#dde3ec', '#1e3048');
 
   const handleScan = async (scannedText: string) => {
     try {
@@ -29,18 +29,11 @@ export default function Login() {
       });
       const data = await response.json();
       if (response.ok) {
-        
-        // --- NEW: Better Toast Message ---
         const welcomeMessage = data.user.role === 'FACULTY' 
           ? `Welcome, ${data.user.name}. Attendance recorded!` 
           : `Welcome, ${data.user.name}`;
 
-        toast({ 
-          title: welcomeMessage, 
-          status: "success", 
-          duration: 3000,
-          position: "top"
-        });
+        toast({ title: welcomeMessage, status: "success", duration: 3000, position: "top" });
         localStorage.setItem('userRole', data.user.role);
         localStorage.setItem('userName', data.user.name);
         localStorage.setItem('userId', data.user._id);
@@ -67,7 +60,7 @@ export default function Login() {
   };
 
   return (
-    <Center minH="100vh" bg={bg} p={4}>
+    <Center minH="100vh" bg={bg} p={4} fontFamily="'Segoe UI', system-ui, sans-serif">
       <Box bg={cardBg} p={8} borderRadius="lg" borderWidth="1px" borderColor={borderColor} w="100%" maxW="400px" shadow="sm">
         <VStack spacing={2} mb={8} textAlign="center">
           <Heading size="lg" color={textColor} letterSpacing="tight">Access Portal</Heading>
@@ -85,20 +78,20 @@ export default function Login() {
               <VStack spacing={5}>
                 <Box w="100%">
                   <Text mb={2} fontSize="sm" fontWeight="bold" color={textColor}>Email Address</Text>
-                  <Input placeholder="user@ccis.edu" value={email} onChange={(e) => setEmail(e.target.value)} focusBorderColor="blue.500" color={textColor} />
+                  <Input placeholder="user@ccis.edu" value={email} onChange={(e) => setEmail(e.target.value)} focusBorderColor="blue.500" color={textColor} borderColor={borderColor} />
                 </Box>
                 <Box w="100%">
                   <Text mb={2} fontSize="sm" fontWeight="bold" color={textColor}>Password</Text>
-                  <Input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} focusBorderColor="blue.500" color={textColor} />
+                  <Input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} focusBorderColor="blue.500" color={textColor} borderColor={borderColor} />
                 </Box>
-                <Button w="100%" colorScheme="blue" bg="blue.600" _hover={{ bg: 'blue.700' }} isLoading={loading} onClick={handlePasswordLogin}>
+                <Button w="100%" colorScheme="blue" bg="#2563eb" _hover={{ bg: '#1d4ed8' }} isLoading={loading} onClick={handlePasswordLogin}>
                   Sign In
                 </Button>
               </VStack>
             </TabPanel>
 
             <TabPanel px={0} pt={0}>
-              <Box borderRadius="md" overflow="hidden" borderWidth="1px" borderColor={borderColor} bg="black">
+              <Box borderRadius="md" overflow="hidden" borderWidth="1px" borderColor={borderColor} bg="#000">
                 <Scanner onScan={(result) => { if (result && result.length > 0) handleScan(result[0].rawValue); }} />
               </Box>
               <Text textAlign="center" mt={4} fontSize="sm" color={mutedText}>

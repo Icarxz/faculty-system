@@ -119,7 +119,7 @@ router.get('/seed', async (req, res) => {
 
     // Create Admin, Dean, and a Student
     await User.create({ role: 'ADMIN', name: 'System Admin', email: 'admin@univ.edu', qrHash: 'admin_qr_999', programPosition: 'IT Department' });
-    await User.create({ role: 'DEAN', name: 'Dr. John C. Amar', email: 'dean@univ.edu', qrHash: 'dean_qr_777', programPosition: 'Dean of CCIS' });
+    await User.create({ role: 'DEAN', name: 'John C. Amar, DMgt', email: 'jamar@ccis.edu', qrHash: 'dean_qr_777', programPosition: 'Dean of CCIS' });
     
     // NEW: Create a test Student
     await User.create({ role: 'STUDENT', name: 'Juan Dela Cruz', email: 'student@univ.edu', qrHash: 'student_qr_111', programPosition: 'BS INFO 3D' });
