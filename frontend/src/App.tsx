@@ -5,7 +5,7 @@ import FacultyDashboard from './components/FacultyDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import DeanDashboard from './components/DeanDashboard';
 import StudentDashboard from './components/StudentDashboard';
-import ProtectedRoute from './components/ProtectedRoute'; // <-- Import the bouncer!
+import ProtectedRoute from './components/ProtectedRoute';
 
 
 export default function App() {
@@ -15,19 +15,21 @@ export default function App() {
         {/* Public Login */}
         <Route path="/" element={<Login />} />
         
-        {/* The Student View */}
+        {/* The Student View: STRICTLY STUDENT ONLY */}
         <Route 
           path="/student-dashboard" 
           element={
-            <ProtectedRoute allowedRoles={['STUDENT', 'FACULTY', 'ADMIN', 'DEAN']}>
+            <ProtectedRoute allowedRoles={['STUDENT']}>
               <StudentDashboard /> 
             </ProtectedRoute>
           } 
         />
+        
+        {/* The Faculty View: STRICTLY FACULTY ONLY */}
         <Route 
           path="/faculty-dashboard" 
           element={
-            <ProtectedRoute allowedRoles={['STUDENT', 'FACULTY', 'ADMIN', 'DEAN']}>
+            <ProtectedRoute allowedRoles={['FACULTY']}>
               <FacultyDashboard />
             </ProtectedRoute>
           } 
@@ -53,7 +55,7 @@ export default function App() {
           } 
         />
         
-        {/* Catch-all: If they type a weird URL, send them to login */}
+        {/* Catch-all: If they type a weird URL or try to bypass, send them to login */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>

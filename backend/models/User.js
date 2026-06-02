@@ -11,11 +11,12 @@ const UserSchema = new mongoose.Schema({
   qrHash: { type: String, required: true, unique: true }, 
   programPosition: { type: String, required: true }, 
   room: { type: String }, 
-  currentStatus: { 
-    type: String, 
-    enum: ['AVAILABLE', 'IN_CLASS', 'IN_MEETING', 'ON_BREAK', 'OUT_OF_OFFICE'],
-    default: 'OUT_OF_OFFICE' 
-  },
+  currentStatus: {
+      type: String,
+      // We must explicitly allow 'ABSENT' and 'NOT_UPDATED' so the automated jobs don't crash the server
+      enum: ['AVAILABLE', 'IN_CLASS', 'IN_MEETING', 'ON_BREAK', 'OUT_OF_OFFICE', 'ON_LEAVE', 'ABSENT', 'NOT_UPDATED'], 
+      default: 'OUT_OF_OFFICE'
+    },
   currentLocation: { type: String }, 
   statusUpdatedAt: { type: Date, default: null },
   noticeMessage: { type: String, default: '' },
