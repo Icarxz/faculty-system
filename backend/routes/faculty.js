@@ -6,6 +6,20 @@ const Appointment = require('../models/Appointment');
 const Announcement = require('../models/Announcement');
 const StatusHistory = require('../models/StatusHistory');
 
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const isPM = timeStr.toUpperCase().includes('PM');
+  const isAM = timeStr.toUpperCase().includes('AM');
+  const cleanTime = timeStr.replace(/ AM| PM|AM|PM/gi, '').trim();
+  
+  let [hours, minutes] = cleanTime.split(':').map(Number);
+  
+  if (isPM && hours !== 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+  
+  return (hours * 60) + minutes;
+};
+
 // 1. GET ROUTE: Fetch all faculty members for the dashboard
 router.get('/status', async (req, res) => {
   try {
@@ -188,14 +202,57 @@ router.get('/announcements/:section', async (req, res) => {
 // 8. POST ROUTE: Student requests an appointment
 router.post('/appointment', async (req, res) => {
   try {
-    await Appointment.create(req.body);
-    res.json({ message: 'Appointment requested successfully!' });
+    const { facultyId, date, time, studentName } = req.body;
+
+    const aptDate = new Date(date);
+    const dayOfWeek = aptDate.getDay(); 
+    const requestedMinutes = timeToMinutes(time); 
+
+    // UPSTREAM BLOCK 1: Master Schedule Collision
+    const classesToday = await Schedule.find({ facultyId: facultyId, dayOfWeek: dayOfWeek });
+    
+    for (let currentClass of classesToday) {
+      const classStart = timeToMinutes(currentClass.startTime);
+      const classEnd = timeToMinutes(currentClass.endTime);
+      
+      if (requestedMinutes >= classStart && requestedMinutes <= classEnd) {
+        return res.status(400).json({ 
+          error: `Booking Denied: The instructor has a scheduled class during this time block.` 
+        });
+      }
+    }
+
+    // UPSTREAM BLOCK 2: Approved Appointments
+    const existingApproved = await Appointment.findOne({
+      facultyId, date, time, status: 'APPROVED'
+    });
+
+    if (existingApproved) {
+      return res.status(400).json({ 
+        error: `Booking Denied: The instructor already has a confirmed consultation at this time.` 
+      });
+    }
+
+    // ANTI-SPAM PROTOCOL
+    const existingPending = await Appointment.findOne({
+      facultyId, date, time, studentName, status: 'PENDING'
+    });
+
+    if (existingPending) {
+      return res.status(400).json({ 
+        error: `Anti-Spam: You already have a pending request submitted for this exact time.` 
+      });
+    }
+
+    // If it survives all validations, save it
+    const newAppointment = await Appointment.create(req.body);
+    res.json({ message: 'Appointment requested successfully!', appointment: newAppointment });
+
   } catch (error) {
+    console.error('Student Booking Error:', error);
     res.status(500).json({ error: 'Server error creating appointment' });
   }
 });
-
-// NEW ADMIN ROUTES 
 
 // 9. GET ROUTE: Admin fetches ALL appointments
 router.get('/appointments/all', async (req, res) => {
@@ -209,16 +266,83 @@ router.get('/appointments/all', async (req, res) => {
 });
 
 // 10. PUT ROUTE: Admin approves/rejects appointments
+// === HELPER FUNCTION: Time Math ===
+// Converts strings like "13:30" or "1:30 PM" into total minutes from midnight for mathematical comparison
+// const timeToMinutes = (timeStr) => {
+//   if (!timeStr) return 0;
+//   const isPM = timeStr.toUpperCase().includes('PM');
+//   const isAM = timeStr.toUpperCase().includes('AM');
+//   const cleanTime = timeStr.replace(/ AM| PM|AM|PM/gi, '').trim();
+  
+//   let [hours, minutes] = cleanTime.split(':').map(Number);
+  
+//   if (isPM && hours !== 12) hours += 12;
+//   if (isAM && hours === 12) hours = 0;
+  
+//   return (hours * 60) + minutes;
+// };
+
+// 10. PUT ROUTE: Faculty/Admin approves or rejects appointments
 router.put('/appointment/:id', async (req, res) => {
   try {
-    const updatedApt = await Appointment.findByIdAndUpdate(
-      req.params.id, 
-      { status: req.body.status }, 
-      { new: true }
-    );
-    res.json(updatedApt);
+    const { status } = req.body;
+    
+    // If we are just rejecting, we don't need to do any heavy math. Just save it and exit.
+    if (status !== 'APPROVED') {
+      const updatedApt = await Appointment.findByIdAndUpdate(req.params.id, { status }, { new: true });
+      return res.json(updatedApt);
+    }
+
+    // === THE SMART APPROVAL ENGINE ===
+    // 1. Fetch the exact appointment they are trying to approve
+    const pendingApt = await Appointment.findById(req.params.id);
+    if (!pendingApt) return res.status(404).json({ error: 'Appointment not found' });
+
+    // 2. Convert the requested date into a Day of the Week (1=Mon, 2=Tue, etc.)
+    // JavaScript getDay() returns 0 for Sunday, 1 for Monday.
+    const aptDate = new Date(pendingApt.date);
+    const dayOfWeek = aptDate.getDay(); 
+    const requestedMinutes = timeToMinutes(pendingApt.time);
+
+    // 3. HARD BLOCK 1: Master Schedule Collision
+    // Get all classes this professor teaches on this specific day of the week
+    const classesToday = await Schedule.find({ facultyId: pendingApt.facultyId, dayOfWeek: dayOfWeek });
+    
+    for (let currentClass of classesToday) {
+      const classStart = timeToMinutes(currentClass.startTime);
+      const classEnd = timeToMinutes(currentClass.endTime);
+      
+      // If the requested appointment falls during class hours, block the approval immediately
+      if (requestedMinutes >= classStart && requestedMinutes <= classEnd) {
+        return res.status(400).json({ 
+          error: `Approval Denied: You have a scheduled ${currentClass.subject} class in ${currentClass.room} during this time.` 
+        });
+      }
+    }
+
+    // 4. HARD BLOCK 2: Double-Booking Collision
+    // Check if another student is already approved for this exact date and time
+    const doubleBooked = await Appointment.findOne({
+      facultyId: pendingApt.facultyId,
+      date: pendingApt.date,
+      time: pendingApt.time,
+      status: 'APPROVED',
+      _id: { $ne: pendingApt._id } // Don't check against itself
+    });
+
+    if (doubleBooked) {
+      return res.status(400).json({ 
+        error: `Approval Denied: You already have an approved appointment with ${doubleBooked.studentName} at this time.` 
+      });
+    }
+
+    // 5. If it survives all checks, it is mathematically safe to approve
+    const safeApt = await Appointment.findByIdAndUpdate(req.params.id, { status: 'APPROVED' }, { new: true });
+    res.json(safeApt);
+
   } catch (error) {
-    res.status(500).json({ error: 'Server error updating appointment' });
+    console.error('Approval Engine Error:', error);
+    res.status(500).json({ error: 'Server error processing the approval logic.' });
   }
 });
 
