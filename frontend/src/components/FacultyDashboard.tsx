@@ -232,37 +232,33 @@ export default function FacultyDashboard() {
   };
 
   const updateAppointmentStatus = async (targetApt: any, newStatus: string) => {
-    if (newStatus === 'APPROVED') {
-      const approvedThatDay = myAppointments.filter(a => a.status === 'APPROVED' && a.date === targetApt.date);
-      const timeToMinutes = (timeStr: string) => {
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        return (hours * 60) + minutes;
-      };
-      const targetMinutes = timeToMinutes(targetApt.time);
-
-      for (let existingApt of approvedThatDay) {
-        const existingMinutes = timeToMinutes(existingApt.time);
-        const timeDifference = Math.abs(targetMinutes - existingMinutes);
-        if (timeDifference === 0) {
-          toast({ title: "Overlap Blocked", description: `Appointment exists at exact time!`, status: "error", duration: 5000 });
-          return; 
-        }
-        if (timeDifference <= 60) {
-          const isConfirmed = window.confirm(`WARNING: This appointment is only ${timeDifference} minutes away from ${existingApt.studentName} at ${formatTime(existingApt.time)}. Proceed?`);
-          if (!isConfirmed) return; 
-        }
-      }
-    }
     try {
       const response = await fetch(`http://localhost:5000/api/faculty/appointment/${targetApt._id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
-      if (response.ok) {
-        toast({ title: `Appointment ${newStatus}`, status: 'success' });
-        fetchData(); 
+      
+      const data = await response.json();
+
+      // THE INTERCEPTOR: If backend blocks it (Class conflict or Double-booking)
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to process appointment.');
       }
-    } catch (error) {}
+
+      toast({ title: `Appointment ${newStatus}`, status: 'success' });
+      fetchData(); 
+      
+    } catch (error: any) {
+      // THE ERROR TOAST: Displays the backend's exact mathematical reason for blocking
+      toast({
+        title: "Scheduling Conflict Blocked",
+        description: error.message,
+        status: "error",
+        duration: 7000, 
+        isClosable: true,
+        position: "top", 
+      });
+    }
   };
 
   // ── DYNAMIC DATA TRANSLATOR ──────────────────────────────────

@@ -83,18 +83,48 @@ export default function StudentDashboard() {
   const handleAppointmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    
     try {
       const response = await fetch('http://localhost:5000/api/faculty/appointment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentName: userName, studentSection, facultyId: selectedFaculty, date: aptDate, time: aptTime, reason: aptReason })
       });
-      if (response.ok) {
-        toast({ title: 'Appointment Requested!', status: 'success' });
-        setSelectedFaculty(''); setAptDate(''); setAptTime(''); setAptReason('');
-        setActivePage('requests'); 
-        fetchData(); 
+
+      // 1. We must parse the JSON to read the custom error message from the backend
+      const data = await response.json();
+
+      // 2. === THE INTERCEPTOR ===
+      // If the backend threw a 400 Bad Request (Class collision, Double-booking, or Spam)
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to request appointment.');
       }
-    } catch (error) { toast({ title: 'Error sending request.', status: 'error' }); }
+
+      // 3. If it was mathematically safe and successful:
+      toast({ 
+        title: 'Appointment Requested!', 
+        description: 'Your request is now pending professor approval.',
+        status: 'success', 
+        duration: 3000,
+        isClosable: true
+      });
+      
+      setSelectedFaculty(''); setAptDate(''); setAptTime(''); setAptReason('');
+      setActivePage('requests'); 
+      fetchData(); 
+      
+    } catch (error: any) { 
+      // 4. === THE SPAM BLOCKER TOAST ===
+      // Catches the backend error and displays it loudly at the top of the screen
+      toast({ 
+        title: 'Time Slot Unavailable', 
+        description: error.message,
+        status: 'error', 
+        duration: 6000, // Stays visible long enough for the student to read it
+        isClosable: true,
+        position: 'top'
+      }); 
+    }
+    
     setIsSubmitting(false);
   };
 
