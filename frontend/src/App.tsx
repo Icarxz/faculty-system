@@ -1,11 +1,12 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './components/Login';
+import LandingPage from './components/LandingPage';
 import FacultyDashboard from './components/FacultyDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import DeanDashboard from './components/DeanDashboard';
 import StudentDashboard from './components/StudentDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
+import StudentCheckIn from './components/StudentCheckIn';
 
 
 export default function App() {
@@ -13,7 +14,7 @@ export default function App() {
     <Router>
       <Routes>
         {/* Public Login */}
-        <Route path="/" element={<Login />} />
+        <Route path="/" element={<LandingPage />} />
         
         {/* The Student View: STRICTLY STUDENT ONLY */}
         <Route 
@@ -54,6 +55,8 @@ export default function App() {
             </ProtectedRoute>
           } 
         />
+
+        <Route element={<StudentCheckIn />} path="/attend/:token" />
         
         {/* Catch-all: If they type a weird URL or try to bypass, send them to login */}
         <Route path="*" element={<Navigate to="/" />} />

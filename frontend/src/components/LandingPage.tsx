@@ -1,0 +1,348 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Box, Flex, Heading, Text, Input, Button, VStack, useToast, 
+  FormControl, FormLabel, Select, useColorModeValue, Tabs, TabList, TabPanels, Tab, TabPanel,
+  HStack, InputGroup, InputRightAddon
+} from '@chakra-ui/react';
+
+export default function LandingPage() {
+  const navigate = useNavigate();
+  const toast = useToast();
+  
+  const bg = useColorModeValue('gray.50', 'gray.900');
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
+
+  // Login State
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Registration State
+  const [regName, setRegName] = useState('');
+  const [nameSuffix, setNameSuffix] = useState(''); // NEW: Tracks Jr., Sr., etc.
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regRole, setRegRole] = useState<'STUDENT' | 'FACULTY'>('STUDENT');
+
+  // NEW: Cascading Dropdown State
+  const [selProgram, setSelProgram] = useState('');
+  const [selYear, setSelYear] = useState('');
+  const [selSection, setSelSection] = useState('');
+
+  const [facultyPosition, setFacultyPosition] = useState('');
+  const [facultyTitle, setFacultyTitle] = useState('Prof.');
+
+  const [isRegistering, setIsRegistering] = useState(false); 
+
+  // NEW: The "Database" Dictionary simulating academic attrition
+  const cohortConfig: Record<string, Record<string, string[]>> = {
+
+    'BS INFO': {
+      '1': ['A', 'B', 'C', 'D', 'E'], // 1st year has 5 sections
+      '2': ['A', 'B', 'C', 'D'],      // Reduced by 2nd year
+      '3': ['A', 'B', 'C', 'D'],
+      '4': ['A', 'B', 'C']            // Further attrition by 4th year
+    },
+    'BS COMSCI': {
+      '1': ['A', 'B'], '2': ['A', 'B'], '3': ['A', 'B'], '4': ['A', 'B']
+    },
+    'BLIS': {
+      '1': ['A', 'B'], '2': ['A', 'B'], '3': ['A', 'B'], '4': ['A', 'B']
+    }
+  };
+
+  // --- THE TRUE LOGIN HANDLER ---
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    
+    try {
+      const fullLoginEmail = `${loginEmail.trim()}@ua.edu.ph`;
+
+      const response = await fetch('http://localhost:5000/api/faculty/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: fullLoginEmail, password: loginPassword })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error);
+
+      // Save secure data to local storage
+      localStorage.setItem('userId', data._id);
+      localStorage.setItem('userName', data.name);
+      localStorage.setItem('userRole', data.role);
+
+      toast({ title: 'Login Successful', status: 'success', duration: 2000 });
+
+      // QR Attendance
+      const intendedRoute = sessionStorage.getItem('intendedRoute');
+      
+      if (intendedRoute && data.role === 'STUDENT') {
+        sessionStorage.removeItem('intendedRoute'); // Clear it so it doesn't fire again later
+        navigate(intendedRoute);
+        return;
+      }
+
+      // Default Navigation based on role
+      if (data.role === 'STUDENT') navigate('/student-dashboard');
+      else if (data.role === 'FACULTY') navigate('/faculty-dashboard');
+      else if (data.role === 'ADMIN') navigate('/admin-dashboard');
+      else if (data.role === 'DEAN') navigate('/dean-dashboard');
+
+    } catch (error: any) {
+      toast({ title: 'Authentication Failed', description: error.message, status: 'error', position: 'top' });
+    }
+    setIsLoggingIn(false);
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formattedName = e.target.value.replace(/(^\w|\s\w)/g, (m) => m.toUpperCase());
+    setRegName(formattedName);
+  };
+
+  // --- THE REGISTRATION HANDLER ---
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsRegistering(true);
+
+    try {
+      const baseName = nameSuffix ? `${regName.trim()} ${nameSuffix}` : regName.trim();
+      const finalFullName = regRole === 'FACULTY' ? `${facultyTitle} ${baseName}` : baseName;
+
+      // NEW: Stitch the cascading dropdowns back together securely
+      const finalProgramPosition = regRole === 'STUDENT' 
+        ? `${selProgram} ${selYear}${selSection}` 
+        : facultyPosition;
+
+      const fullRegEmail = `${regEmail.trim()}@ua.edu.ph`;
+
+      const response = await fetch('http://localhost:5000/api/faculty/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name: finalFullName,
+          email: fullRegEmail,
+          password: regPassword,
+          role: regRole,
+          programPosition: finalProgramPosition
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      toast({
+        title: regRole === 'STUDENT' ? 'Registration Complete' : 'Registration Pending',
+        description: data.message,
+        status: regRole === 'STUDENT' ? 'success' : 'info',
+        duration: 7000,
+        isClosable: true,
+        position: 'top'
+      });
+
+      setRegName(''); 
+      setRegEmail(''); 
+      setRegPassword(''); 
+      setSelProgram('');
+      setSelYear('');
+      setSelSection('');
+      setFacultyPosition('');
+    }catch (error) {
+      toast({ 
+        title: 'Registration Failed', 
+        description: (error as Error).message, // <-- Typecasted safely here
+        status: 'error', 
+        position: 'top' 
+      });
+    }
+    setIsRegistering(false);
+  };
+
+  return (
+    <Flex minH="100vh" align="center" justify="center" bg={bg} p={4} direction={{ base: 'column', md: 'row' }}>
+      
+      <Box flex="1" p={10} maxW="600px" textAlign={{ base: 'center', md: 'left' }}>
+        <Heading size="2xl" color="blue.600" mb={4}>CCIS Sync</Heading>
+        <Heading size="lg" mb={6} color={useColorModeValue('gray.700', 'white')}>Faculty Monitoring & Consultation Architecture</Heading>
+        <Text fontSize="lg" color="gray.500" mb={8}>Streamline your academic schedule. Book consultations without the wait.</Text>
+      </Box>
+
+      <Box flex="1" w="100%" maxW="450px" bg={cardBg} borderRadius="xl" shadow="2xl" overflow="hidden" borderWidth="1px" borderColor={borderColor}>
+        <Tabs isFitted colorScheme="blue" variant="enclosed-colored">
+          <TabList mb="1em"><Tab py={4}>Login</Tab><Tab py={4}>Register</Tab></TabList>
+          <TabPanels>
+            
+            {/* LOGIN PANEL */}
+            <TabPanel p={8}>
+              <form onSubmit={handleLogin}>
+                <VStack spacing={5}>
+                  <FormControl isRequired>
+  <FormLabel>University Email</FormLabel>
+  <InputGroup>
+    <Input 
+      placeholder="juandelacruz" 
+      value={loginEmail} 
+      onChange={(e) => setLoginEmail(e.target.value)} 
+    />
+    <InputRightAddon bg="gray.100" color="gray.600" fontWeight="bold">
+      @ua.edu.ph
+    </InputRightAddon>
+  </InputGroup>
+</FormControl>
+                  <FormControl isRequired>
+                    <FormLabel>Password</FormLabel>
+                    <Input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                  </FormControl>
+                  <Button type="submit" colorScheme="blue" size="lg" w="100%" isLoading={isLoggingIn}>Secure Login</Button>
+                </VStack>
+              </form>
+            </TabPanel>
+
+            {/* REGISTRATION PANEL */}
+            <TabPanel p={8}>
+              <form onSubmit={handleRegister}>
+                <VStack spacing={4}>
+                  <FormControl isRequired>
+                    <FormLabel>I am registering as a:</FormLabel>
+                    <Select value={regRole} onChange={(e) => setRegRole(e.target.value as 'STUDENT' | 'FACULTY')}>
+                      <option value="STUDENT">Student</option>
+                      <option value="FACULTY">Faculty Member</option>
+                    </Select>
+                  </FormControl>
+                  <HStack align="flex-end" w="100%">
+                    {/* Render Title Dropdown ONLY for Faculty */}
+                    {regRole === 'FACULTY' && (
+                      <FormControl w="130px" isRequired>
+                        <FormLabel>Title</FormLabel>
+                        <Select value={facultyTitle} onChange={(e) => setFacultyTitle(e.target.value)}>
+                          <option value="Prof.">Prof.</option>
+                          <option value="Dr.">Dr.</option>
+                          <option value="Engr.">Engr.</option>
+                          <option value="Mr.">Mr.</option>
+                          <option value="Ms.">Ms.</option>
+                        </Select>
+                      </FormControl>
+                    )}
+
+                    <FormControl isRequired>
+                      <FormLabel>Full Name</FormLabel>
+                      <Input 
+                        placeholder="Juan Dela Cruz" 
+                        value={regName} 
+                        onChange={handleNameChange} 
+                      />
+                    </FormControl>
+
+                    <FormControl w="110px">
+                      <FormLabel>Suffix</FormLabel>
+                      <Select value={nameSuffix} onChange={(e) => setNameSuffix(e.target.value)}>
+                        <option value="">None</option>
+                        <option value="Sr.">Sr.</option>
+                        <option value="Jr.">Jr.</option>
+                        <option value="I">I</option>
+                        <option value="II">II</option>
+                        <option value="III">III</option>
+                        <option value="IV">IV</option>
+                        <option value="V">V</option>
+                      </Select>
+                    </FormControl>
+                  </HStack>
+                  <FormControl isRequired>
+  <FormLabel>University Email</FormLabel>
+  <InputGroup>
+    <Input 
+      placeholder="juandelacruz" 
+      value={regEmail} 
+      onChange={(e) => setRegEmail(e.target.value)} 
+    />
+    <InputRightAddon bg="gray.100" color="gray.600" fontWeight="bold">
+      @ua.edu.ph
+    </InputRightAddon>
+  </InputGroup>
+</FormControl>
+                  <FormControl isRequired>
+                    <FormLabel>Password</FormLabel>
+                    <Input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
+                  </FormControl>
+                  {/* DYNAMIC FORM FIELD BASED ON ROLE */}
+                  {regRole === 'STUDENT' ? (
+                    <FormControl isRequired>
+                      <FormLabel>Program / Year / Section</FormLabel>
+                      <HStack w="100%">
+                        
+                        {/* 1. PROGRAM DROPDOWN */}
+                        <Select 
+                          placeholder="Program" 
+                          value={selProgram} 
+                          onChange={(e) => {
+                            setSelProgram(e.target.value);
+                            setSelYear('');    // Reset downstream
+                            setSelSection(''); // Reset downstream
+                          }}
+                        >
+                          <option value="" disabled hidden>Program</option>
+  {Object.keys(cohortConfig).map(prog => (
+    <option value={prog} key={prog}>{prog}</option>
+  ))}
+                        </Select>
+
+                        {/* 2. YEAR DROPDOWN (Unlocks when Program is selected) */}
+                        <Select 
+                          placeholder="Yr" 
+                          value={selYear} 
+                          isDisabled={!selProgram}
+                          onChange={(e) => {
+                            setSelYear(e.target.value);
+                            setSelSection(''); // Reset downstream
+                          }} 
+                          w="100px"
+                        >
+                          <option value="" disabled hidden>Yr</option>
+  {selProgram && Object.keys(cohortConfig[selProgram]).map(year => (
+    <option value={year} key={year}>{year}</option>
+  ))}
+                        </Select>
+
+                        {/* 3. SECTION DROPDOWN (Unlocks when Year is selected) */}
+                        <Select 
+                          placeholder="Sec" 
+                          value={selSection} 
+                          isDisabled={!selYear}
+                          onChange={(e) => setSelSection(e.target.value)} 
+                          w="100px"
+                        >
+                          <option value="" disabled hidden>Sec</option>
+  {selProgram && selYear && cohortConfig[selProgram][selYear].map(sec => (
+    <option value={sec} key={sec}>{sec}</option>
+  ))}
+                        </Select>
+
+                      </HStack>
+                    </FormControl>
+                  ) : (
+                    <FormControl isRequired>
+                      <FormLabel>Academic Position</FormLabel>
+                      <Input 
+                        placeholder="e.g. IT Instructor or Program Head" 
+                        value={facultyPosition} 
+                        onChange={(e) => setFacultyPosition(e.target.value)} 
+                      />
+                    </FormControl>
+                  )}
+                  <Button type="submit" colorScheme="green" size="lg" w="100%" mt={4} isLoading={isRegistering}>
+                    {regRole === 'STUDENT' ? 'Create Account' : 'Request Faculty Access'}
+                  </Button>
+                </VStack>
+              </form>
+            </TabPanel>
+
+          </TabPanels>
+        </Tabs>
+      </Box>
+    </Flex>
+  );
+}

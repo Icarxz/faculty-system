@@ -8,21 +8,31 @@ const UserSchema = new mongoose.Schema({
   },
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  qrHash: { type: String, required: true, unique: true }, 
+  
+  // === NEW: Authentication & Security Fields ===
+  password: { type: String }, 
+  accountStatus: { 
+    type: String, 
+    enum: ['ACTIVE', 'PENDING_APPROVAL', 'ARCHIVED', 'RESTRICTED'],
+    default: 'ACTIVE' 
+  },
+
+  // MODIFIED: Removed 'required: true' so users can register without crashing the DB
+  qrHash: { type: String, unique: true, sparse: true }, 
+  
   programPosition: { type: String, required: true }, 
   room: { type: String }, 
   currentStatus: {
       type: String,
-      // We must explicitly allow 'ABSENT' and 'NOT_UPDATED' so the automated jobs don't crash the server
       enum: ['AVAILABLE', 'IN_CLASS', 'IN_MEETING', 'ON_BREAK', 'OUT_OF_OFFICE', 'ON_LEAVE', 'ABSENT', 'NOT_UPDATED'], 
       default: 'OUT_OF_OFFICE'
-    },
+  },
   currentLocation: { type: String }, 
   statusUpdatedAt: { type: Date, default: null },
   noticeMessage: { type: String, default: '' },
   flaggedDate: { type: String, default: '' },
   flaggedReason: { type: String, default: '' },
-  statusNote:      { type: String, default: '' },
+  statusNote: { type: String, default: '' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', UserSchema);
