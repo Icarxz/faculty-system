@@ -3,16 +3,17 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Heading, Table, Thead, Tbody, Tr, Th, Td, TableContainer,
-  Badge, Text, Button as ChakraButton, Select, Input, HStack, useToast, FormControl, FormLabel, Flex, VStack, Textarea,
-  useColorMode, useColorModeValue
+  Box, Heading, Table, Thead, Tbody, Tr, Th, Td, Badge, Text, 
+  Button as ChakraButton, Select, Input, HStack, useToast, FormControl, 
+  FormLabel, Flex, VStack, Textarea, useColorMode, useColorModeValue
 } from '@chakra-ui/react';
+import { QRCodeSVG } from 'qrcode.react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Page      = "status" | "schedule" | "requests";
+type Page      = "status" | "schedule" | "attendance" | "requests"; // Added 'attendance'
 type ViewMode  = "week" | "day";
 type EventType = "teaching" | "appointment";
 
@@ -22,7 +23,7 @@ interface ScheduleEvent {
   section:     string;     
   room:        string;     
   type:        EventType;
-  dayOfWeek:   number;     // 0 = Monday … 5 = Saturday
+  dayOfWeek:   number;     
   startHour:   number;
   startMinute: number;
   endHour:     number;
@@ -36,11 +37,7 @@ interface ScheduleEvent {
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const START_HOUR = 7;
 const END_HOUR   = 20;
-
-// === FIX: Compact Layout ===
-const SLOT_PX = 30; // Shrinks the calendar height
-// ===========================
-
+const SLOT_PX = 30; 
 const TOTAL_SLOTS = (END_HOUR - START_HOUR) * 2;
 const GRID_HEIGHT = TOTAL_SLOTS * SLOT_PX;
 
@@ -125,6 +122,13 @@ export default function FacultyDashboard() {
   const [flagDate, setFlagDate] = useState('');
   const [flagReason, setFlagReason] = useState('');
 
+  // ── QR Attendance State ──────────────────────────────────────────────────────
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
+  const [activeToken, setActiveToken] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const qrAutoDetectRan = useRef(false); // Prevents infinite toast loops
+
   // ── Derived values ────────────────────────────────────────────────────────
   const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
   const weekLabel = useMemo(() => formatWeekLabel(weekDates), [weekDates]);
@@ -197,6 +201,64 @@ export default function FacultyDashboard() {
     return () => clearInterval(intervalId);
   }, [userId]);
 
+  // ── QR Attendance Logic ──────────────────────────────────────────────
+  useEffect(() => {
+    if (mySchedule.length > 0 && !qrAutoDetectRan.current) {
+      const now = new Date();
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const currentDay = days[now.getDay()];
+      const currentTimeInt = now.getHours() * 100 + now.getMinutes();
+
+      const activeClass = mySchedule.find(sched => {
+        // Adjust based on your DB's day mapping (e.g. 1 = Monday vs 'Monday')
+        // Using numeric match for dayOfWeek based on your frontend logic mapping
+        const isTodayNumeric = sched.dayOfWeek === now.getDay();
+        
+        const startInt = parseInt(sched.startTime.replace(':', ''), 10);
+        const endInt = parseInt(sched.endTime.replace(':', ''), 10);
+        
+        return isTodayNumeric && currentTimeInt >= (startInt - 15) && currentTimeInt <= endInt;
+      });
+
+      if (activeClass) {
+        setSelectedSubject(activeClass.subject);
+        setSelectedSection(activeClass.section);
+        toast({
+          title: 'Class Auto-Detected',
+          description: `${activeClass.subject} for ${activeClass.section} is starting soon.`,
+          status: 'info',
+          duration: 4000,
+          position: 'top-right'
+        });
+      }
+      qrAutoDetectRan.current = true;
+    }
+  }, [mySchedule, toast]);
+
+  const handleStartClass = async () => {
+    if (!selectedSubject || !selectedSection) {
+      return toast({ title: 'Missing Data', description: 'Please select a subject and section.', status: 'warning' });
+    }
+    setIsGenerating(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/faculty/attendance/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facultyId: userId, subject: selectedSubject, section: selectedSection })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      setActiveToken(data.sessionToken);
+      toast({ title: 'Session Live', description: 'QR Code generated securely.', status: 'success' });
+    } catch (error: any) {
+      toast({ title: 'Generation Failed', description: error.message, status: 'error' });
+    }
+    setIsGenerating(false);
+  };
+  const qrUrl = `http://localhost:5173/attend/${activeToken}`;
+
+  // ── Existing Status Handlers ────────────────────────────────────────
   const handleUpdateMyStatus = async () => {
     setIsUpdating(true);
     try {
@@ -237,26 +299,15 @@ export default function FacultyDashboard() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
-      
       const data = await response.json();
-
-      // THE INTERCEPTOR: If backend blocks it (Class conflict or Double-booking)
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to process appointment.');
-      }
+      if (!response.ok) throw new Error(data.error || 'Failed to process appointment.');
 
       toast({ title: `Appointment ${newStatus}`, status: 'success' });
       fetchData(); 
-      
     } catch (error: any) {
-      // THE ERROR TOAST: Displays the backend's exact mathematical reason for blocking
       toast({
-        title: "Scheduling Conflict Blocked",
-        description: error.message,
-        status: "error",
-        duration: 7000, 
-        isClosable: true,
-        position: "top", 
+        title: "Scheduling Conflict Blocked", description: error.message,
+        status: "error", duration: 7000, isClosable: true, position: "top", 
       });
     }
   };
@@ -358,6 +409,7 @@ export default function FacultyDashboard() {
             [
               { page: "status",   label: "My Status"      },
               { page: "schedule", label: "Master Schedule" },
+              { page: "attendance", label: "Live Attendance" }, // Merged Tab
               { page: "requests", label: `Requests (${myAppointments.filter(a => a.status === 'PENDING').length})` },
             ] as { page: Page; label: string }[]
           ).map(({ page, label }) => {
@@ -413,6 +465,87 @@ export default function FacultyDashboard() {
       <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
 
         {/* ───────────────────────────────────────────────────────────────
+            PAGE: LIVE ATTENDANCE (MERGED QR INITIATOR)
+        ─────────────────────────────────────────────────────────────── */}
+        {activePage === "attendance" && (
+          <Box p={8} overflowY="auto" h="100%">
+            <Heading mb={6} color={textColor} size="lg">Initiate Live Class Attendance</Heading>
+
+            <Flex direction={{ base: 'column', lg: 'row' }} gap={8}>
+              <Box flex="1" bg={cardBg} p={6} borderRadius="xl" shadow="md" borderWidth="1px" borderColor={borderColor}>
+                <Heading size="md" mb={4} color={textColor}>Session Controls</Heading>
+                
+                <VStack spacing={4} align="stretch">
+                  <FormControl isRequired>
+                    <FormLabel color={textColor}>Active Subject</FormLabel>
+                    <Select 
+                      color={textColor}
+                      value={selectedSubject} 
+                      onChange={(e) => setSelectedSubject(e.target.value)}
+                      placeholder="Select Subject (Manual Fallback)"
+                    >
+                      {Array.from(new Set(mySchedule.map(s => s.subject))).map(subj => (
+                        <option key={subj} value={subj}>{subj}</option>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl isRequired>
+                    <FormLabel color={textColor}>Target Section</FormLabel>
+                    <Select 
+                      color={textColor}
+                      value={selectedSection} 
+                      onChange={(e) => setSelectedSection(e.target.value)}
+                      placeholder="Select Section (Manual Fallback)"
+                    >
+                      {Array.from(new Set(mySchedule.map(s => s.section))).map(sec => (
+                        <option key={sec} value={sec}>{sec}</option>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <ChakraButton 
+                    colorScheme="blue" 
+                    size="lg" 
+                    onClick={handleStartClass} 
+                    isLoading={isGenerating}
+                    isDisabled={!!activeToken} 
+                  >
+                    Start Class & Generate QR
+                  </ChakraButton>
+
+                  {activeToken && (
+                    <ChakraButton colorScheme="red" variant="outline" onClick={() => setActiveToken(null)}>
+                      End Session / Clear QR
+                    </ChakraButton>
+                  )}
+                </VStack>
+              </Box>
+
+              <Box flex="1" bg={dk ? "gray.800" : "gray.50"} p={6} borderRadius="xl" shadow="inner" display="flex" flexDirection="column" alignItems="center" justifyContent="center" border="2px dashed" borderColor={borderColor}>
+                {activeToken ? (
+                  <VStack spacing={6}>
+                    <Badge colorScheme="green" px={3} py={1} fontSize="md" borderRadius="full">
+                      LIVE SESSION ACTIVE
+                    </Badge>
+                    <Box bg="white" p={4} borderRadius="lg" shadow="sm">
+                      <QRCodeSVG value={qrUrl} size={256} level="H" includeMargin />
+                    </Box>
+                    <Text fontSize="sm" color={mutedText} textAlign="center">
+                      Project this code. Students must scan via the CCIS portal to log attendance.
+                    </Text>
+                  </VStack>
+                ) : (
+                  <Text color={mutedText} fontWeight="bold">
+                    Select a class and click "Start" to project the QR code.
+                  </Text>
+                )}
+              </Box>
+            </Flex>
+          </Box>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────────
             PAGE: MASTER SCHEDULE
         ─────────────────────────────────────────────────────────────── */}
         {activePage === "schedule" && (
@@ -442,7 +575,6 @@ export default function FacultyDashboard() {
             {/* Schedule Grid */}
             <div style={{ padding: "20px", display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div style={{ background: C.surface, borderRadius: "10px", border: `1px solid ${C.border}`, overflow: "hidden", minWidth: "520px" }}>
-                {/* Day-header row */}
                 <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, background: C.surfaceAlt }}>
                   <div style={{ width: "58px", flexShrink: 0, borderRight: `1px solid ${C.border}` }} />
                   {visibleDayIndices.map((di, col) => {
@@ -457,7 +589,6 @@ export default function FacultyDashboard() {
                   })}
                 </div>
 
-                {/* Body */}
                 <div style={{ display: "flex", height: `${GRID_HEIGHT}px`, position: "relative" }}>
                   <div style={{ width: "58px", flexShrink: 0, borderRight: `1px solid ${C.border}`, position: "relative" }}>
                     {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
@@ -480,7 +611,6 @@ export default function FacultyDashboard() {
                     return (
                       <div 
                         key={di} 
-                        // === FIX: This is the correct Zoom Wrapper! ===
                         onClick={() => {
                           if (viewMode === "week") {
                             setFocusDay(di);
@@ -488,12 +618,7 @@ export default function FacultyDashboard() {
                           }
                         }}
                         style={{ 
-                          flex: 1, 
-                          position: "relative", 
-                          borderRight: isLast ? "none" : `1px solid ${C.border}`, 
-                          background: active ? C.todayBand : "transparent",
-                          cursor: viewMode === "week" ? "zoom-in" : "default",
-                          transition: "background 0.2s ease"
+                          flex: 1, position: "relative", borderRight: isLast ? "none" : `1px solid ${C.border}`, background: active ? C.todayBand : "transparent", cursor: viewMode === "week" ? "zoom-in" : "default", transition: "background 0.2s ease"
                         }}
                         onMouseEnter={(e) => {
                           if (viewMode === "week" && !active) e.currentTarget.style.background = dk ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)";
@@ -506,7 +631,6 @@ export default function FacultyDashboard() {
                           <div key={i} style={{ position: "absolute", top: `${i * SLOT_PX}px`, width: "100%", height: `${SLOT_PX}px`, borderBottom: `1px solid ${i % 2 === 0 ? C.border : C.borderFaint}`, pointerEvents: "none" }} />
                         ))}
                         
-                        {/* === FIX: This inner loop renders the colored boxes! === */}
                         {dayEvts.map(event => {
                           const { top, height } = getEventPos(event);
                           const isTeach = event.type === "teaching";
@@ -528,7 +652,6 @@ export default function FacultyDashboard() {
                 </div>
               </div>
 
-              {/* Legend & Emergency Form */}
               <Flex justifyContent="space-between" alignItems="center">
                 <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
                   <span style={{ fontSize: "10px", color: C.textMid, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Legend</span>
@@ -562,7 +685,6 @@ export default function FacultyDashboard() {
             <h1 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "20px", color: textColor }}>My Status & Notices</h1>
             <Box display="flex" gap={6} flexDirection={{ base: 'column', md: 'row' }}>
               
-              {/* FIX: Removed the incorrect h="500px" limit from here! */}
               <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" flex="1">
                 <Heading size="md" color={textColor} mb={6}>Update Live Status</Heading>
                 <VStack spacing={4} alignItems="flex-start">

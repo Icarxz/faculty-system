@@ -292,5 +292,6 @@ export default function StudentDashboard() {
         </div>
       </main>
     </div>
+    
   );
 }

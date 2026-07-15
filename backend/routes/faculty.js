@@ -8,24 +8,7 @@ const Announcement = require('../models/Announcement');
 const StatusHistory = require('../models/StatusHistory');
 const crypto = require('crypto'); // Built-in Node.js module for secure hashes
 const AttendanceSession = require('../models/AttendanceSession');
-
-// =========================================================================
-// === GLOBAL HELPER FUNCTION: Time Math ===
-// Configured at the top so it is hoisted and accessible by all routes below
-// =========================================================================
-const timeToMinutes = (timeStr) => {
-  if (!timeStr) return 0;
-  const isPM = timeStr.toUpperCase().includes('PM');
-  const isAM = timeStr.toUpperCase().includes('AM');
-  const cleanTime = timeStr.replace(/ AM| PM|AM|PM/gi, '').trim();
-  
-  let [hours, minutes] = cleanTime.split(':').map(Number);
-  
-  if (isPM && hours !== 12) hours += 12;
-  if (isAM && hours === 12) hours = 0;
-  
-  return (hours * 60) + minutes;
-};
+const { isOverlapping } = require('../utils/timeMath');
 
 // =========================================================================
 // === ROUTES ===
@@ -148,23 +131,61 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// 2. PUT ROUTE: Update a specific faculty member's status
-router.put('/update-status/:id', async (req, res) => {
-  const { currentStatus, currentLocation, statusNote } = req.body;
+// PUT ROUTE: Approve or Reject an Appointment
+router.put('/appointment/:id', async (req, res) => {
   try {
-    const updated = await User.findByIdAndUpdate(
-      req.params.id,
-      { 
-        currentStatus, 
-        currentLocation, 
-        statusNote,
-        statusUpdatedAt: new Date()
-      },
-      { new: true }
-    );
-    res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: 'Could not update status.' });
+    const { status } = req.body;
+    
+    // Replace with your actual Appointment model reference if imported differently
+    const targetApt = await Appointment.findById(req.params.id);
+
+    if (!targetApt) {
+      return res.status(404).json({ error: 'Appointment not found.' });
+    }
+
+    // THE INTERCEPTOR: Only run overlap logic if they are trying to APPROVE
+    if (status === 'APPROVED') {
+      const facultyId = targetApt.facultyId;
+      const aptDate = new Date(targetApt.date);
+      
+      // Get day of week (0 = Sunday, 1 = Monday) to check against recurring classes
+      const dayOfWeek = aptDate.getDay(); 
+
+      // 1. Fetch faculty's academic classes for this specific day
+      // Replace with your actual Schedule model reference
+      const dayClasses = await Schedule.find({ 
+        facultyId: facultyId, 
+        dayOfWeek: dayOfWeek 
+      });
+
+      // 2. Fetch faculty's ALREADY APPROVED appointments for this exact date
+      const approvedAppointments = await Appointment.find({
+        facultyId: facultyId,
+        date: targetApt.date,
+        status: 'APPROVED',
+        _id: { $ne: targetApt._id } // Do not compare against itself
+      });
+
+      // Pool all physical commitments together
+      const allExistingEvents = [...dayClasses, ...approvedAppointments];
+
+      // 3. RUN THE HEURISTIC
+      if (isOverlapping(targetApt.time, allExistingEvents)) {
+        return res.status(409).json({ 
+          error: 'Double-Booking Prevented: This time block conflicts with an existing class or approved appointment.' 
+        });
+      }
+    }
+
+    // If math clears (or if they are just rejecting/canceling), execute the database write
+    targetApt.status = status;
+    await targetApt.save();
+
+    res.json(targetApt);
+
+  } catch (error) {
+    console.error('Appointment Collision Check Error:', error);
+    res.status(500).json({ error: 'Server error processing appointment interval math.' });
   }
 });
 
@@ -289,10 +310,13 @@ router.get('/announcements/:section', async (req, res) => {
   }
 });
 
-// 8. POST ROUTE: Student requests an appointment with Operating Hours Check
+// 8. POST ROUTE: Student requests an appointment
 router.post('/appointment', async (req, res) => {
   try {
-    const { facultyId, date, time, studentName } = req.body;
+    const { facultyId, date, time, studentName, studentSection, reason } = req.body;
+    
+    // We get the studentId from the token/session (if available) or pass it in body
+    const studentId = req.body.studentId || null; 
 
     const aptDate = new Date(date);
     const dayOfWeek = aptDate.getDay(); 
@@ -305,45 +329,56 @@ router.post('/appointment', async (req, res) => {
       });
     }
 
-    // Upstream Check 1: Master Schedule Collision
-    const classesToday = await Schedule.find({ facultyId: facultyId, dayOfWeek: dayOfWeek });
-    for (let currentClass of classesToday) {
-      const classStart = timeToMinutes(currentClass.startTime);
-      const classEnd = timeToMinutes(currentClass.endTime);
-      
-      if (requestedMinutes >= classStart && requestedMinutes <= classEnd) {
-        return res.status(400).json({ 
-          error: `Booking Denied: The instructor has a scheduled class during this time block.` 
-        });
-      }
-    }
-
-    // Upstream Check 2: Approved Appointments
-    const existingApproved = await Appointment.findOne({
-      facultyId, date, time, status: 'APPROVED'
+    // 1. Fetch the professor's immovable academic classes for this day
+    const dayClasses = await Schedule.find({ 
+      facultyId: facultyId, 
+      dayOfWeek: dayOfWeek 
     });
-    if (existingApproved) {
+
+    // 2. Fetch the professor's ALREADY APPROVED appointments for this date
+    const approvedAppointments = await Appointment.find({
+      facultyId: facultyId,
+      date: date,
+      status: 'APPROVED'
+    });
+
+    const allExistingEvents = [...dayClasses, ...approvedAppointments];
+
+    // 3. THE INTERCEPTOR: Run the interval overlap math
+    if (isOverlapping(time, allExistingEvents)) {
       return res.status(400).json({ 
-        error: `Booking Denied: The instructor already has a confirmed consultation at this time.` 
+        error: 'Booking Denied: The instructor is teaching a class or has an approved appointment at this time.' 
       });
     }
 
-    // Anti-Spam Protocol
+    // 4. Anti-Spam Protocol
     const existingPending = await Appointment.findOne({
       facultyId, date, time, studentName, status: 'PENDING'
     });
+    
     if (existingPending) {
       return res.status(400).json({ 
         error: `Anti-Spam: You already have a pending request submitted for this exact time.` 
       });
     }
 
-    const newAppointment = await Appointment.create(req.body);
+    // 5. Save the pending request
+    const newAppointment = await Appointment.create({
+      facultyId,
+      studentId,
+      studentName,
+      studentSection,
+      date,
+      time,
+      reason,
+      status: 'PENDING'
+    });
+
     res.json({ message: 'Appointment requested successfully!', appointment: newAppointment });
 
   } catch (error) {
     console.error('Student Booking Error:', error);
-    res.status(500).json({ error: 'Server error creating appointment' });
+    res.status(500).json({ error: 'Server error processing the appointment request.' });
   }
 });
 

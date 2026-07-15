@@ -27,7 +27,4 @@ const AttendanceSessionSchema = new mongoose.Schema({
   expiresAt: { type: Date, required: true } // Auto-closes if the instructor forgets
 }, { timestamps: true });
 
-// Automatically delete or close documents after they expire to keep the DB clean
-AttendanceSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
 module.exports = mongoose.model('AttendanceSession', AttendanceSessionSchema);

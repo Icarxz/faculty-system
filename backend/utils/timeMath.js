@@ -1,0 +1,22 @@
+// Converts "14:30" into 870 (minutes from midnight)
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return (hours * 60) + minutes;
+};
+
+// The Interval Overlap Engine
+const isOverlapping = (newStartStr, existingEvents) => {
+  const newStart = timeToMinutes(newStartStr);
+  const newEnd = newStart + 60; // 60-minute blocks
+
+  return existingEvents.some(event => {
+    const existingStart = timeToMinutes(event.startTime || event.time);
+    const existingEnd = event.endTime ? timeToMinutes(event.endTime) : existingStart + 60;
+    
+    // The mathematical absolute for collision detection
+    return (newStart < existingEnd) && (existingStart < newEnd);
+  });
+};
+
+module.exports = { timeToMinutes, isOverlapping };
