@@ -170,7 +170,7 @@ export default function FacultyDashboard() {
 
   // ── API Functions ────────────────────────────────────────────────────────
   const fetchData = () => {
-    fetch('http://localhost:5000/api/faculty/status')
+    fetch('${import.meta.env.VITE_API_URL}/api/faculty/status')
       .then((res) => res.json())
       .then((data) => {
         if (userId && data.length > 0 && !hasSyncedRef.current) {
@@ -185,11 +185,11 @@ export default function FacultyDashboard() {
       });
       
     if (userId) {
-      fetch(`http://localhost:5000/api/faculty/appointments/me/${userId}`)
+      fetch(`${import.meta.env.VITE_API_URL}/api/faculty/appointments/me/${userId}`)
         .then(res => res.json())
         .then(data => setMyAppointments(data));
         
-      fetch(`http://localhost:5000/api/faculty/my-schedule/${userId}`)
+      fetch(`${import.meta.env.VITE_API_URL}/api/faculty/my-schedule/${userId}`)
         .then(res => res.json())
         .then(data => setMySchedule(data));
     }
@@ -205,19 +205,27 @@ export default function FacultyDashboard() {
   useEffect(() => {
     if (mySchedule.length > 0 && !qrAutoDetectRan.current) {
       const now = new Date();
-      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const currentDay = days[now.getDay()];
-      const currentTimeInt = now.getHours() * 100 + now.getMinutes();
+      
+      // Convert current time to absolute minutes from midnight
+      const currentMinutes = (now.getHours() * 60) + now.getMinutes();
+
+      // Frontend replica of your backend timeMath engine
+      const timeToMinutes = (timeStr: string) => {
+        if (!timeStr) return 0;
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        return (hours * 60) + minutes;
+      };
 
       const activeClass = mySchedule.find(sched => {
-        // Adjust based on your DB's day mapping (e.g. 1 = Monday vs 'Monday')
-        // Using numeric match for dayOfWeek based on your frontend logic mapping
+        // Match day numerically (e.g., 1 = Monday)
         const isTodayNumeric = sched.dayOfWeek === now.getDay();
         
-        const startInt = parseInt(sched.startTime.replace(':', ''), 10);
-        const endInt = parseInt(sched.endTime.replace(':', ''), 10);
+        // Convert schedule bounds to absolute minutes
+        const startMins = timeToMinutes(sched.startTime);
+        const endMins = timeToMinutes(sched.endTime);
         
-        return isTodayNumeric && currentTimeInt >= (startInt - 15) && currentTimeInt <= endInt;
+        // The mathematically absolute boundary check (-15 minutes early buffer)
+        return isTodayNumeric && currentMinutes >= (startMins - 15) && currentMinutes <= endMins;
       });
 
       if (activeClass) {
@@ -241,7 +249,7 @@ export default function FacultyDashboard() {
     }
     setIsGenerating(true);
     try {
-      const response = await fetch('http://localhost:5000/api/faculty/attendance/start', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/api/faculty/attendance/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ facultyId: userId, subject: selectedSubject, section: selectedSection })
@@ -262,7 +270,7 @@ export default function FacultyDashboard() {
   const handleUpdateMyStatus = async () => {
     setIsUpdating(true);
     try {
-      await fetch(`http://localhost:5000/api/faculty/update-status/${userId}`, {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/update-status/${userId}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentStatus: myStatus, currentLocation: myLocation })
       });
@@ -274,7 +282,7 @@ export default function FacultyDashboard() {
   const handlePostNotice = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetch(`http://localhost:5000/api/faculty/notice/${userId}`, {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/notice/${userId}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notice })
       });
@@ -285,7 +293,7 @@ export default function FacultyDashboard() {
   const handleFlagDate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetch(`http://localhost:5000/api/faculty/flag-date/${userId}`, {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/flag-date/${userId}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ flagDate, reason: flagReason })
       });
@@ -295,7 +303,7 @@ export default function FacultyDashboard() {
 
   const updateAppointmentStatus = async (targetApt: any, newStatus: string) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/faculty/appointment/${targetApt._id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/appointment/${targetApt._id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });

@@ -31,8 +31,14 @@ router.post('/register', async (req, res) => {
     if (role === 'ADMIN' || role === 'DEAN') {
       return res.status(403).json({ error: 'Restricted role. Contact IT department.' });
     }
+    
+    // Password Strength Validation
+    const passwordPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
+    if (!passwordPattern.test(password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters, with 1 uppercase letter, 1 number, and 1 symbol.' });
+    }
 
-    // Hash the password before saving!
+    // Hash the password before saving/bcrypting it to the database
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -392,60 +398,7 @@ router.get('/appointments/all', async (req, res) => {
   }
 });
 
-// 10. PUT ROUTE: Faculty/Admin approves or rejects appointments
-router.put('/appointment/:id', async (req, res) => {
-  try {
-    const { status } = req.body;
-    
-    if (status !== 'APPROVED') {
-      const updatedApt = await Appointment.findByIdAndUpdate(req.params.id, { status }, { new: true });
-      return res.json(updatedApt);
-    }
-
-    const pendingApt = await Appointment.findById(req.params.id);
-    if (!pendingApt) return res.status(404).json({ error: 'Appointment not found' });
-
-    const aptDate = new Date(pendingApt.date);
-    const dayOfWeek = aptDate.getDay(); 
-    const requestedMinutes = timeToMinutes(pendingApt.time);
-
-    // Hard Block 1: Master Schedule Collision
-    const classesToday = await Schedule.find({ facultyId: pendingApt.facultyId, dayOfWeek: dayOfWeek });
-    for (let currentClass of classesToday) {
-      const classStart = timeToMinutes(currentClass.startTime);
-      const classEnd = timeToMinutes(currentClass.endTime);
-      
-      if (requestedMinutes >= classStart && requestedMinutes <= classEnd) {
-        return res.status(400).json({ 
-          error: `Approval Denied: You have a scheduled ${currentClass.subject} class in ${currentClass.room} during this time.` 
-        });
-      }
-    }
-
-    // Hard Block 2: Double-Booking Collision
-    const doubleBooked = await Appointment.findOne({
-      facultyId: pendingApt.facultyId,
-      date: pendingApt.date,
-      time: pendingApt.time,
-      status: 'APPROVED',
-      _id: { $ne: pendingApt._id }
-    });
-    if (doubleBooked) {
-      return res.status(400).json({ 
-        error: `Approval Denied: You already have an approved appointment with ${doubleBooked.studentName} at this time.` 
-      });
-    }
-
-    const safeApt = await Appointment.findByIdAndUpdate(req.params.id, { status: 'APPROVED' }, { new: true });
-    res.json(safeApt);
-
-  } catch (error) {
-    console.error('Approval Engine Error:', error);
-    res.status(500).json({ error: 'Server error processing the approval logic.' });
-  }
-});
-
-// 11. GET ROUTE: Fetch all unverified users
+// 10. GET ROUTE: Fetch all unverified users
 router.get('/users/all', async (req, res) => {
   try {
     const users = await User.find({ role: { $ne: 'ADMIN' } }).sort({ createdAt: -1 });

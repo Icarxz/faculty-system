@@ -39,7 +39,7 @@ export default function StudentCheckIn() {
     const userId = localStorage.getItem('userId');
 
     try {
-      const response = await fetch('http://localhost:5000/api/faculty/attendance/confirm', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/api/faculty/attendance/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionToken: token, studentId: userId })

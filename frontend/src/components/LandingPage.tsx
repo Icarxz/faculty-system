@@ -26,6 +26,8 @@ export default function LandingPage() {
   const [regPassword, setRegPassword] = useState('');
   const [regRole, setRegRole] = useState<'STUDENT' | 'FACULTY'>('STUDENT');
 
+  const [schoolId, setSchoolId] = useState('');
+
   // NEW: Cascading Dropdown State
   const [selProgram, setSelProgram] = useState('');
   const [selYear, setSelYear] = useState('');
@@ -61,7 +63,7 @@ export default function LandingPage() {
     try {
       const fullLoginEmail = `${loginEmail.trim()}@ua.edu.ph`;
 
-      const response = await fetch('http://localhost:5000/api/faculty/login', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: fullLoginEmail, password: loginPassword })
@@ -99,6 +101,7 @@ export default function LandingPage() {
     setIsLoggingIn(false);
   };
 
+
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formattedName = e.target.value.replace(/(^\w|\s\w)/g, (m) => m.toUpperCase());
     setRegName(formattedName);
@@ -106,8 +109,17 @@ export default function LandingPage() {
 
   // --- THE REGISTRATION HANDLER ---
   const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsRegistering(true);
+  e.preventDefault();
+
+  if (regRole === 'STUDENT') {
+    const schoolIdPattern = /^(\d{4}-\d{4}-[A-Z]|\d{4}-S0\d{4})$/;
+    if (!schoolIdPattern.test(schoolId)) {
+      toast({ title: 'Invalid School ID', description: 'Format must be e.g. 2023-1234-A or 2025-S03321', status: 'warning' });
+      return;
+    }
+  }
+
+  setIsRegistering(true);
 
     try {
       const baseName = nameSuffix ? `${regName.trim()} ${nameSuffix}` : regName.trim();
@@ -120,7 +132,17 @@ export default function LandingPage() {
 
       const fullRegEmail = `${regEmail.trim()}@ua.edu.ph`;
 
-      const response = await fetch('http://localhost:5000/api/faculty/register', {
+      const passwordPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
+      if (!passwordPattern.test(regPassword)) {
+        toast({ 
+          title: 'Weak Password', 
+          description: 'Must be at least 8 characters, with 1 uppercase letter, 1 number, and 1 symbol.', 
+          status: 'warning' 
+        });
+        return;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -128,7 +150,8 @@ export default function LandingPage() {
           email: fullRegEmail,
           password: regPassword,
           role: regRole,
-          programPosition: finalProgramPosition
+          programPosition: finalProgramPosition,
+          schoolId: regRole === 'STUDENT' ? schoolId : undefined
         })
       });
 
@@ -181,18 +204,18 @@ export default function LandingPage() {
               <form onSubmit={handleLogin}>
                 <VStack spacing={5}>
                   <FormControl isRequired>
-  <FormLabel>University Email</FormLabel>
-  <InputGroup>
-    <Input 
-      placeholder="juandelacruz" 
-      value={loginEmail} 
-      onChange={(e) => setLoginEmail(e.target.value)} 
-    />
-    <InputRightAddon bg="gray.100" color="gray.600" fontWeight="bold">
-      @ua.edu.ph
-    </InputRightAddon>
-  </InputGroup>
-</FormControl>
+                    <FormLabel>University Email</FormLabel>
+                    <InputGroup>
+                      <Input 
+                        placeholder="juandelacruz" 
+                        value={loginEmail} 
+                        onChange={(e) => setLoginEmail(e.target.value)} 
+                      />
+                      <InputRightAddon bg="gray.100" color="gray.600" fontWeight="bold">
+                        @ua.edu.ph
+                      </InputRightAddon>
+                    </InputGroup>
+                  </FormControl>
                   <FormControl isRequired>
                     <FormLabel>Password</FormLabel>
                     <Input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
@@ -203,142 +226,158 @@ export default function LandingPage() {
             </TabPanel>
 
             {/* REGISTRATION PANEL */}
-            <TabPanel p={8}>
-              <form onSubmit={handleRegister}>
-                <VStack spacing={4}>
-                  <FormControl isRequired>
-                    <FormLabel>I am registering as a:</FormLabel>
-                    <Select value={regRole} onChange={(e) => setRegRole(e.target.value as 'STUDENT' | 'FACULTY')}>
-                      <option value="STUDENT">Student</option>
-                      <option value="FACULTY">Faculty Member</option>
-                    </Select>
-                  </FormControl>
-                  <HStack align="flex-end" w="100%">
-                    {/* Render Title Dropdown ONLY for Faculty */}
-                    {regRole === 'FACULTY' && (
-                      <FormControl w="130px" isRequired>
-                        <FormLabel>Title</FormLabel>
-                        <Select value={facultyTitle} onChange={(e) => setFacultyTitle(e.target.value)}>
-                          <option value="Prof.">Prof.</option>
-                          <option value="Dr.">Dr.</option>
-                          <option value="Engr.">Engr.</option>
-                          <option value="Mr.">Mr.</option>
-                          <option value="Ms.">Ms.</option>
-                        </Select>
-                      </FormControl>
-                    )}
+<TabPanel p={8}>
+  <form onSubmit={handleRegister}>
+    <VStack spacing={4}>
+      
+      {/* 1. ROLE SELECTOR */}
+      <FormControl isRequired>
+        <FormLabel>I am registering as a:</FormLabel>
+        <Select value={regRole} onChange={(e) => setRegRole(e.target.value as 'STUDENT' | 'FACULTY')}>
+          <option value="STUDENT">Student</option>
+          <option value="FACULTY">Faculty Member</option>
+        </Select>
+      </FormControl>
 
-                    <FormControl isRequired>
-                      <FormLabel>Full Name</FormLabel>
-                      <Input 
-                        placeholder="Juan Dela Cruz" 
-                        value={regName} 
-                        onChange={handleNameChange} 
-                      />
-                    </FormControl>
+      {/* 2. FULL NAME & SUFFIX */}
+      <HStack align="flex-end" w="100%">
+        {/* Render Title Dropdown ONLY for Faculty */}
+        {regRole === 'FACULTY' && (
+          <FormControl w="130px" isRequired>
+            <FormLabel>Title</FormLabel>
+            <Select value={facultyTitle} onChange={(e) => setFacultyTitle(e.target.value)}>
+              <option value="Prof.">Prof.</option>
+              <option value="Dr.">Dr.</option>
+              <option value="Engr.">Engr.</option>
+              <option value="Mr.">Mr.</option>
+              <option value="Ms.">Ms.</option>
+            </Select>
+          </FormControl>
+        )}
 
-                    <FormControl w="110px">
-                      <FormLabel>Suffix</FormLabel>
-                      <Select value={nameSuffix} onChange={(e) => setNameSuffix(e.target.value)}>
-                        <option value="">None</option>
-                        <option value="Sr.">Sr.</option>
-                        <option value="Jr.">Jr.</option>
-                        <option value="I">I</option>
-                        <option value="II">II</option>
-                        <option value="III">III</option>
-                        <option value="IV">IV</option>
-                        <option value="V">V</option>
-                      </Select>
-                    </FormControl>
-                  </HStack>
-                  <FormControl isRequired>
-  <FormLabel>University Email</FormLabel>
-  <InputGroup>
-    <Input 
-      placeholder="juandelacruz" 
-      value={regEmail} 
-      onChange={(e) => setRegEmail(e.target.value)} 
-    />
-    <InputRightAddon bg="gray.100" color="gray.600" fontWeight="bold">
-      @ua.edu.ph
-    </InputRightAddon>
-  </InputGroup>
-</FormControl>
-                  <FormControl isRequired>
-                    <FormLabel>Password</FormLabel>
-                    <Input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
-                  </FormControl>
-                  {/* DYNAMIC FORM FIELD BASED ON ROLE */}
-                  {regRole === 'STUDENT' ? (
-                    <FormControl isRequired>
-                      <FormLabel>Program / Year / Section</FormLabel>
-                      <HStack w="100%">
-                        
-                        {/* 1. PROGRAM DROPDOWN */}
-                        <Select 
-                          placeholder="Program" 
-                          value={selProgram} 
-                          onChange={(e) => {
-                            setSelProgram(e.target.value);
-                            setSelYear('');    // Reset downstream
-                            setSelSection(''); // Reset downstream
-                          }}
-                        >
-                          <option value="" disabled hidden>Program</option>
-  {Object.keys(cohortConfig).map(prog => (
-    <option value={prog} key={prog}>{prog}</option>
-  ))}
-                        </Select>
+        <FormControl isRequired>
+          <FormLabel>Full Name</FormLabel>
+          <Input 
+            placeholder="Juan Dela Cruz" 
+            value={regName} 
+            onChange={handleNameChange} 
+          />
+        </FormControl>
 
-                        {/* 2. YEAR DROPDOWN (Unlocks when Program is selected) */}
-                        <Select 
-                          placeholder="Yr" 
-                          value={selYear} 
-                          isDisabled={!selProgram}
-                          onChange={(e) => {
-                            setSelYear(e.target.value);
-                            setSelSection(''); // Reset downstream
-                          }} 
-                          w="100px"
-                        >
-                          <option value="" disabled hidden>Yr</option>
-  {selProgram && Object.keys(cohortConfig[selProgram]).map(year => (
-    <option value={year} key={year}>{year}</option>
-  ))}
-                        </Select>
+        <FormControl w="110px">
+          <FormLabel>Suffix</FormLabel>
+          <Select value={nameSuffix} onChange={(e) => setNameSuffix(e.target.value)}>
+            <option value="">None</option>
+            <option value="Sr.">Sr.</option>
+            <option value="Jr.">Jr.</option>
+            <option value="I">I</option>
+            <option value="II">II</option>
+            <option value="III">III</option>
+            <option value="IV">IV</option>
+            <option value="V">V</option>
+          </Select>
+        </FormControl>
+      </HStack>
 
-                        {/* 3. SECTION DROPDOWN (Unlocks when Year is selected) */}
-                        <Select 
-                          placeholder="Sec" 
-                          value={selSection} 
-                          isDisabled={!selYear}
-                          onChange={(e) => setSelSection(e.target.value)} 
-                          w="100px"
-                        >
-                          <option value="" disabled hidden>Sec</option>
-  {selProgram && selYear && cohortConfig[selProgram][selYear].map(sec => (
-    <option value={sec} key={sec}>{sec}</option>
-  ))}
-                        </Select>
+      {/* 3. DYNAMIC FORM FIELDS (ACADEMIC IDENTITY) */}
+      {regRole === 'STUDENT' ? (
+        <>
+          <FormControl isRequired>
+            <FormLabel>School ID</FormLabel>
+            <Input 
+              placeholder="2023-1234-A" 
+              value={schoolId} 
+              onChange={(e) => setSchoolId(e.target.value.toUpperCase())} 
+            />
+          </FormControl>
+        
+          <FormControl isRequired>
+            <FormLabel>Program / Year / Section</FormLabel>
+            <HStack w="100%">
+              {/* PROGRAM DROPDOWN */}
+              <Select
+                value={selProgram}
+                onChange={(e) => {
+                  setSelProgram(e.target.value);
+                  setSelYear('');    // Reset downstream
+                  setSelSection(''); // Reset downstream
+                }}
+                >
+                <option value="" disabled hidden>Program</option>
+                  {Object.keys(cohortConfig).map(prog => (
+                <option value={prog} key={prog}>{prog}</option>
+              ))}
+            </Select>
 
-                      </HStack>
-                    </FormControl>
-                  ) : (
-                    <FormControl isRequired>
-                      <FormLabel>Academic Position</FormLabel>
-                      <Input 
-                        placeholder="e.g. IT Instructor or Program Head" 
-                        value={facultyPosition} 
-                        onChange={(e) => setFacultyPosition(e.target.value)} 
-                      />
-                    </FormControl>
-                  )}
-                  <Button type="submit" colorScheme="green" size="lg" w="100%" mt={4} isLoading={isRegistering}>
-                    {regRole === 'STUDENT' ? 'Create Account' : 'Request Faculty Access'}
-                  </Button>
-                </VStack>
-              </form>
-            </TabPanel>
+              {/* YEAR DROPDOWN */}
+            <Select
+              value={selYear}
+              onChange={(e) => {
+                setSelYear(e.target.value);
+                setSelSection(''); // Reset downstream section when year changes
+              }}
+              isDisabled={!selProgram}
+            >
+              <option value="" disabled hidden>Year</option>
+              {selProgram && Object.keys(cohortConfig[selProgram]).map(year => (
+                <option value={year} key={year}>{year}</option>
+              ))}
+            </Select>
+
+            {/* SECTION DROPDOWN */}
+            <Select
+              value={selSection}
+              onChange={(e) => setSelSection(e.target.value)}
+              isDisabled={!selYear}
+            >
+              <option value="" disabled hidden>Section</option>
+              {selProgram && selYear && cohortConfig[selProgram][selYear].map(sec => (
+                <option value={sec} key={sec}>{sec}</option>
+              ))}
+            </Select>
+
+          </HStack>
+        </FormControl>
+        </>
+      ) : (
+        <FormControl isRequired>
+          <FormLabel>Academic Position</FormLabel>
+          <Input 
+            placeholder="e.g. IT Instructor or Program Head" 
+            value={facultyPosition} 
+            onChange={(e) => setFacultyPosition(e.target.value)} 
+          />
+        </FormControl>
+      )}
+
+      {/* 4. SYSTEM CREDENTIALS (MOVED TO BOTTOM) */}
+      <FormControl isRequired>
+        <FormLabel>University Email</FormLabel>
+        <InputGroup>
+          <Input 
+            placeholder="juandelacruz" 
+            value={regEmail} 
+            onChange={(e) => setRegEmail(e.target.value)} 
+          />
+          <InputRightAddon bg="gray.100" color="gray.600" fontWeight="bold">
+            @ua.edu.ph
+          </InputRightAddon>
+        </InputGroup>
+      </FormControl>
+
+      <FormControl isRequired>
+        <FormLabel>Password</FormLabel>
+        <Input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
+      </FormControl>
+
+      {/* 5. SUBMIT BUTTON */}
+      <Button type="submit" colorScheme="green" size="lg" w="100%" mt={4} isLoading={isRegistering}>
+        {regRole === 'STUDENT' ? 'Create Account' : 'Request Faculty Access'}
+      </Button>
+      
+    </VStack>
+  </form>
+</TabPanel>
 
           </TabPanels>
         </Tabs>

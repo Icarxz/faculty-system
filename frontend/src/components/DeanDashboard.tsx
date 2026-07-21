@@ -45,7 +45,7 @@ export default function DeanDashboard() {
 
   const fetchData = () => {
     // Phase 1 Analytics: Pull live board data
-    fetch('http://localhost:5000/api/faculty/status')
+    fetch('${import.meta.env.VITE_API_URL}/api/faculty/status')
       .then((res) => res.json())
       .then((data) => setFacultyRoster(data));
   };

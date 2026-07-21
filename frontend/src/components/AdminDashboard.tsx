@@ -64,9 +64,9 @@ export default function AdminDashboard() {
   const mutedText = useColorModeValue('#6b7fa0', '#7a93b0');
 
   const fetchAllData = () => {
-    fetch('http://localhost:5000/api/faculty/status').then(res => res.json()).then(data => setFacultyList(data));
-    fetch('http://localhost:5000/api/faculty/appointments/all').then(res => res.json()).then(data => setAppointments(data));
-    fetch('http://localhost:5000/api/faculty/users/all').then(res => res.json()).then(data => setAllUsers(data));
+    fetch('${import.meta.env.VITE_API_URL}/api/faculty/status').then(res => res.json()).then(data => setFacultyList(data));
+    fetch('${import.meta.env.VITE_API_URL}/api/faculty/appointments/all').then(res => res.json()).then(data => setAppointments(data));
+    fetch('${import.meta.env.VITE_API_URL}/api/faculty/users/all').then(res => res.json()).then(data => setAllUsers(data));
   };
 
   useEffect(() => { fetchAllData(); }, []);
@@ -75,7 +75,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     setLoading(true); setGeneratedQr('');
     try {
-      const response = await fetch('http://localhost:5000/api/faculty/add', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/api/faculty/add', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, programPosition, room, role })
       });
@@ -93,7 +93,7 @@ export default function AdminDashboard() {
   const handleAddSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('http://localhost:5000/api/faculty/schedule/add', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/api/faculty/schedule/add', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ facultyId: selectedFacultyId, subject, room: schedRoom, dayOfWeek: Number(dayOfWeek), startTime, endTime })
       });
@@ -127,7 +127,7 @@ export default function AdminDashboard() {
       }
     }
     try {
-      const response = await fetch(`http://localhost:5000/api/faculty/appointment/${targetApt._id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/appointment/${targetApt._id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });

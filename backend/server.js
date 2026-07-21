@@ -21,7 +21,7 @@ app.use('/api/auth', authRoutes); // This adds the /api/auth prefix
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
-    console.log('✅ Successfully connected to MongoDB!');
+    console.log('Connected to MongoDB Atlas Cloud');
 
     startStatusUpdater();
     
@@ -32,7 +32,7 @@ mongoose.connect(process.env.MONGO_URI)
     });
   })
   .catch((error) => {
-    console.error('❌ Error connecting to MongoDB:', error.message);
+    console.error('Cloud Connection Error:', error.message);
   });
 
 // A simple test route to make sure the server is alive

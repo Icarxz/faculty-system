@@ -51,11 +51,11 @@ export default function StudentDashboard() {
   const mutedText = useColorModeValue('#6b7fa0', '#7a93b0');
 
   const fetchData = () => {
-    fetch('http://localhost:5000/api/faculty/status')
+    fetch('${import.meta.env.VITE_API_URL}/api/faculty/status')
       .then(res => res.json())
       .then(data => setFaculty(data));
     if (userName) {
-      fetch(`http://localhost:5000/api/faculty/appointments/student/${userName}`)
+      fetch(`${import.meta.env.VITE_API_URL}/api/faculty/appointments/student/${userName}`)
         .then(res => res.json())
         .then(data => setMyRequests(data));
     }
@@ -85,7 +85,7 @@ export default function StudentDashboard() {
     setIsSubmitting(true);
     
     try {
-      const response = await fetch('http://localhost:5000/api/faculty/appointment', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/api/faculty/appointment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentName: userName, studentSection, facultyId: selectedFaculty, date: aptDate, time: aptTime, reason: aptReason })
       });
@@ -130,7 +130,7 @@ export default function StudentDashboard() {
 
   const handleCancelAppointment = async (id: string) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/faculty/appointment/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/appointment/${id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'CANCELLED BY STUDENT' })
       });
