@@ -17,7 +17,7 @@ const { isOverlapping } = require('../utils/timeMath');
 // === 1. SECURE REGISTRATION ROUTE (With Bcrypt) ===
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role, programPosition } = req.body;
+    const { name, email, password, role, programPosition, schoolId } = req.body;
 
     if (!email.toLowerCase().endsWith('@ua.edu.ph')) {
       return res.status(400).json({ error: 'Registration denied. You must use a valid @ua.edu.ph university email.' });
@@ -50,6 +50,7 @@ router.post('/register', async (req, res) => {
       password: hashedPassword, // Secured.
       role,
       programPosition,
+      schoolId,
       accountStatus,
       currentStatus: 'OUT_OF_OFFICE'
     });
@@ -219,7 +220,7 @@ router.post('/schedule/add', async (req, res) => {
 
 // 5. POST ROUTE: Admin adds a new faculty member (QR Generation)
 router.post('/add', async (req, res) => {
-  const { name, email, programPosition, room, role } = req.body;
+  const { name, email, programPosition, room, role, schoolId } = req.body;
   try {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -235,6 +236,7 @@ router.post('/add', async (req, res) => {
       room,
       role: role || 'FACULTY',
       qrHash,
+      schoolId,
       currentStatus: 'OUT_OF_OFFICE',
     });
 
@@ -253,50 +255,6 @@ router.get('/seed', async (req, res) => {
     await Appointment.deleteMany({});
     await Announcement.deleteMany({});
 
-    // await User.create({ role: 'ADMIN', name: 'System Admin', email: 'admin@univ.edu', qrHash: 'admin_qr_999', programPosition: 'IT Department' });
-    // await User.create({ role: 'DEAN', name: 'John C. Amar, DMgt', email: 'jamar@ccis.edu', qrHash: 'dean_qr_777', programPosition: 'Dean of CCIS' });
-    // await User.create({ role: 'STUDENT', name: 'Juan Dela Cruz', email: 'student@univ.edu', qrHash: 'student_qr_111', programPosition: 'BS INFO 3D' });
-
-    // const f1 = await User.create({ role: 'FACULTY', name: 'Prof. Christian Cubon', email: 'ccubon@univ.edu', qrHash: 'qr_infot6', programPosition: 'INFOT 6 Instructor', currentStatus: 'AVAILABLE' });
-    // const f2 = await User.create({ role: 'FACULTY', name: 'Dr. Maria Santos', email: 'msantos@univ.edu', qrHash: 'qr_infot7', programPosition: 'INFOT 7 Instructor', currentStatus: 'AVAILABLE' });
-    // const f3 = await User.create({ role: 'FACULTY', name: 'Prof. Alan Turing', email: 'aturing@univ.edu', qrHash: 'qr_infot8', programPosition: 'INFOT 8 Instructor', currentStatus: 'AVAILABLE' });
-    // const f4 = await User.create({ role: 'FACULTY', name: 'Dr. Grace Hopper', email: 'ghopper@univ.edu', qrHash: 'qr_infot9', programPosition: 'INFOT 9 Instructor', currentStatus: 'AVAILABLE' });
-    // const f5 = await User.create({ role: 'FACULTY', name: 'Prof. Linus Torvalds', email: 'ltorvalds@univ.edu', qrHash: 'qr_iasec1', programPosition: 'IASEC 1 Instructor', currentStatus: 'AVAILABLE' });
-    // const f6 = await User.create({ role: 'FACULTY', name: 'Dr. Ada Lovelace', email: 'alovelace@univ.edu', qrHash: 'qr_nas3', programPosition: 'NAS 3 Instructor', currentStatus: 'AVAILABLE' });
-    // const f7 = await User.create({ role: 'FACULTY', name: 'Prof. Vint Cerf', email: 'vcerf@univ.edu', qrHash: 'qr_nas4', programPosition: 'NAS 4 Instructor', currentStatus: 'AVAILABLE' });
-
-    // const schedules = [
-    //   { facultyId: f1._id, subject: 'INFOT 6', room: 'IICT 302 (LAB)', dayOfWeek: 2, startTime: '09:00', endTime: '10:00' },
-    //   { facultyId: f1._id, subject: 'INFOT 6', room: 'IICT 304 (LAB)', dayOfWeek: 2, startTime: '13:00', endTime: '14:00' },
-    //   { facultyId: f1._id, subject: 'INFOT 6', room: 'IICT 302 (LAB)', dayOfWeek: 4, startTime: '09:00', endTime: '10:00' },
-    //   { facultyId: f1._id, subject: 'INFOT 6', room: 'IICT 304 (LAB)', dayOfWeek: 4, startTime: '13:00', endTime: '14:00' },
-    //   { facultyId: f2._id, subject: 'INFOT 7', room: 'IICT 307 (LAB)', dayOfWeek: 1, startTime: '10:00', endTime: '11:00' },
-    //   { facultyId: f2._id, subject: 'INFOT 7', room: 'IICT 307 (LAB)', dayOfWeek: 2, startTime: '07:00', endTime: '09:00' },
-    //   { facultyId: f2._id, subject: 'INFOT 7', room: 'IICT 307 (LAB)', dayOfWeek: 3, startTime: '10:00', endTime: '11:00' },
-    //   { facultyId: f2._id, subject: 'INFOT 7', room: 'IICT 307 (LAB)', dayOfWeek: 4, startTime: '07:00', endTime: '09:00' },
-    //   { facultyId: f2._id, subject: 'INFOT 7', room: 'IICT 307 (LAB)', dayOfWeek: 5, startTime: '10:00', endTime: '11:00' },
-    //   { facultyId: f3._id, subject: 'INFOT 8', room: 'IICT 306 (LAB)', dayOfWeek: 1, startTime: '11:00', endTime: '13:00' },
-    //   { facultyId: f3._id, subject: 'INFOT 8', room: 'IICT 307 (LAB)', dayOfWeek: 2, startTime: '14:00', endTime: '16:00' },
-    //   { facultyId: f3._id, subject: 'INFOT 8', room: 'IICT 306 (LAB)', dayOfWeek: 3, startTime: '11:00', endTime: '12:00' },
-    //   { facultyId: f3._id, subject: 'INFOT 8', room: 'IICT 307 (LAB)', dayOfWeek: 4, startTime: '14:00', endTime: '16:00' },
-    //   { facultyId: f4._id, subject: 'INFOT 9', room: 'IICT 305 (LAB)', dayOfWeek: 2, startTime: '10:00', endTime: '12:00' },
-    //   { facultyId: f4._id, subject: 'INFOT 9', room: 'IICT 305 (LAB)', dayOfWeek: 4, startTime: '10:00', endTime: '12:00' },
-    //   { facultyId: f5._id, subject: 'IASEC 1', room: 'IICT 309 (LAB)', dayOfWeek: 1, startTime: '13:00', endTime: '16:00' },
-    //   { facultyId: f5._id, subject: 'IASEC 1', room: 'IICT 308 (LAB)', dayOfWeek: 3, startTime: '14:00', endTime: '16:00' },
-    //   { facultyId: f5._id, subject: 'IASEC 1', room: 'IICT 308 (LAB)', dayOfWeek: 5, startTime: '11:00', endTime: '12:00' },
-    //   { facultyId: f5._id, subject: 'IASEC 1', room: 'IICT 308 (LAB)', dayOfWeek: 5, startTime: '14:00', endTime: '16:00' },
-    //   { facultyId: f6._id, subject: 'NAS 3', room: 'IICT 307 (LAB)', dayOfWeek: 2, startTime: '16:00', endTime: '19:00' },
-    //   { facultyId: f6._id, subject: 'NAS 3', room: 'IICT 307 (LAB)', dayOfWeek: 4, startTime: '16:00', endTime: '19:00' },
-    //   { facultyId: f7._id, subject: 'NAS 4', room: 'IICT 305 (LAB)', dayOfWeek: 1, startTime: '16:00', endTime: '18:00' },
-    //   { facultyId: f7._id, subject: 'NAS 4', room: 'IICT 305 (LAB)', dayOfWeek: 3, startTime: '16:00', endTime: '18:00' },
-    //   { facultyId: f7._id, subject: 'NAS 4', room: 'IICT 305 (LAB)', dayOfWeek: 5, startTime: '16:00', endTime: '18:00' },
-    // ];
-    // await Schedule.insertMany(schedules);
-    
-    // await Announcement.insertMany([
-    //   { facultyName: 'Prof. Christian Cubon', section: 'BS INFO 3D', subject: 'INFOT 6', message: 'Class is suspended today due to a faculty meeting. Please review Chapter 4.' },
-    //   { facultyName: 'Dr. Maria Santos', section: 'ALL', subject: 'General', message: 'Midterm grade consultations are now open. Please request an appointment.' }
-    // ]);
 
     res.json({ message: "Successfully seeded Local Database for presentation!" });
   } catch (error) {
