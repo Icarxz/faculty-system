@@ -9,6 +9,7 @@ const StatusHistory = require('../models/StatusHistory');
 const crypto = require('crypto'); // Built-in Node.js module for secure hashes
 const AttendanceSession = require('../models/AttendanceSession');
 const { isOverlapping } = require('../utils/timeMath');
+const { requireAuth } = require('../middleware/auth');
 
 // =========================================================================
 // === ROUTES ===
@@ -97,13 +98,19 @@ router.post('/login', async (req, res) => {
     }
 
     // 4. Send back the user data (Do NOT send the hashed password back to the frontend)
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      programPosition: user.programPosition
-    });
+    const token = jwt.sign(
+     { userId: user._id, role: user.role }, 
+     process.env.JWT_SECRET, 
+     { expiresIn: '8h' }
+   );
+   res.json({
+    token,
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    programPosition: user.programPosition
+});
 
   } catch (error) {
     console.error(error);
@@ -426,7 +433,7 @@ router.get('/appointments/student/:studentName', async (req, res) => {
 });
 
 // 16. POST ROUTE: Instructor starts a live attendance session
-router.post('/attendance/start', async (req, res) => {
+router.post('/attendance/start', requireAuth(['FACULTY']), async (req, res) => {
   try {
     const { facultyId, subject, section } = req.body;
 

@@ -249,9 +249,13 @@ export default function FacultyDashboard() {
     }
     setIsGenerating(true);
     try {
-      const response = await fetch('${import.meta.env.VITE_API_URL}/api/faculty/attendance/start', {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/attendance/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify({ facultyId: userId, subject: selectedSubject, section: selectedSection })
       });
       const data = await response.json();
