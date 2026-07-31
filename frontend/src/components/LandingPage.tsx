@@ -62,12 +62,15 @@ export default function LandingPage() {
     }
   };
 
+  const PASSWORD_MIN_LENGTH = 12;
+  const passwordPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
+
   const passwordRules = {
-  length: regPassword.length >= 8,
-  upper: /[A-Z]/.test(regPassword),
-  number: /\d/.test(regPassword),
-  symbol: /[!@#$%^&*]/.test(regPassword),
-};
+    length: regPassword.length >= PASSWORD_MIN_LENGTH,
+    upper: /[A-Z]/.test(regPassword),
+    number: /\d/.test(regPassword),
+    symbol: /[^A-Za-z0-9]/.test(regPassword),
+  };
 
   // --- THE TRUE LOGIN HANDLER ---
   const handleLogin = async (e: React.FormEvent) => {
@@ -146,11 +149,10 @@ export default function LandingPage() {
 
       const fullRegEmail = `${regEmail.trim()}@ua.edu.ph`;
 
-      const passwordPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
       if (!passwordPattern.test(regPassword)) {
         toast({ 
           title: 'Weak Password', 
-          description: 'Must be at least 8 characters, with 1 uppercase letter, 1 number, and 1 symbol.', 
+          description: 'Must be at least 12 characters, with 1 uppercase letter, 1 number, and 1 symbol.', 
           status: 'warning' 
         });
         return;
@@ -411,10 +413,10 @@ export default function LandingPage() {
   </InputGroup>
   {showRules && (
     <VStack align="start" mt={2} spacing={0} fontSize="xs">
-      <Text color={passwordRules.length ? 'green.500' : 'gray.400'}>{passwordRules.length ? '✓' : '○'} At least 8 characters</Text>
+      <Text color={passwordRules.length ? 'green.500' : 'gray.400'}>{passwordRules.length ? '✓' : '○'} At least 12 characters</Text>
       <Text color={passwordRules.upper ? 'green.500' : 'gray.400'}>{passwordRules.upper ? '✓' : '○'} One uppercase letter</Text>
       <Text color={passwordRules.number ? 'green.500' : 'gray.400'}>{passwordRules.number ? '✓' : '○'} One number</Text>
-      <Text color={passwordRules.symbol ? 'green.500' : 'gray.400'}>{passwordRules.symbol ? '✓' : '○'} One symbol (!@#$%^&*)</Text>
+      <Text color={passwordRules.symbol ? 'green.500' : 'gray.400'}>{passwordRules.symbol ? '✓' : '○'} One symbol (e.g. ! @ # . _ -)</Text>
     </VStack>
   )}
 </FormControl>
