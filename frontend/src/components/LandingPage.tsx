@@ -6,7 +6,8 @@ import {
   FormControl, FormLabel, Select, useColorModeValue, Tabs, TabList, TabPanels, Tab, TabPanel,
   HStack, InputGroup, InputRightAddon,
   FormHelperText,
-  InputRightElement
+  InputRightElement,
+  IconButton
 } from '@chakra-ui/react';
 
 export default function LandingPage() {
