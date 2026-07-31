@@ -170,7 +170,7 @@ export default function FacultyDashboard() {
 
   // ── API Functions ────────────────────────────────────────────────────────
   const fetchData = () => {
-    fetch('${import.meta.env.VITE_API_URL}/api/faculty/status')
+    fetch(`${import.meta.env.VITE_API_URL}/api/faculty/status`)
       .then((res) => res.json())
       .then((data) => {
         if (userId && data.length > 0 && !hasSyncedRef.current) {

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
+import { ViewIcon, ViewOffIcon } from '@chakra-ui/icons';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Flex, Heading, Text, Input, Button, VStack, useToast, 
   FormControl, FormLabel, Select, useColorModeValue, Tabs, TabList, TabPanels, Tab, TabPanel,
-  HStack, InputGroup, InputRightAddon
+  HStack, InputGroup, InputRightAddon,
+  FormHelperText,
+  InputRightElement
 } from '@chakra-ui/react';
 
 export default function LandingPage() {
@@ -18,12 +21,14 @@ export default function LandingPage() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showLoginPw, setShowLoginPw] = useState(false);
 
   // Registration State
   const [regName, setRegName] = useState('');
   const [nameSuffix, setNameSuffix] = useState(''); // NEW: Tracks Jr., Sr., etc.
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [showRegPw, setShowRegPw] = useState(false);
   const [regRole, setRegRole] = useState<'STUDENT' | 'FACULTY'>('STUDENT');
 
   const [schoolId, setSchoolId] = useState('');
@@ -37,6 +42,7 @@ export default function LandingPage() {
   const [facultyTitle, setFacultyTitle] = useState('Prof.');
 
   const [isRegistering, setIsRegistering] = useState(false); 
+  const [showRules, setShowRules] = useState(false); // only show the checklist once they start typing
 
   // NEW: The "Database" Dictionary simulating academic attrition
   const cohortConfig: Record<string, Record<string, string[]>> = {
@@ -45,7 +51,7 @@ export default function LandingPage() {
       '1': ['A', 'B', 'C', 'D', 'E'], // 1st year has 5 sections
       '2': ['A', 'B', 'C', 'D'],      // Reduced by 2nd year
       '3': ['A', 'B', 'C', 'D'],
-      '4': ['A', 'B', 'C']            // Further attrition by 4th year
+      '4': ['A', 'B', 'C', 'D']            // Further attrition by 4th year
     },
     'BS COMSCI': {
       '1': ['A', 'B'], '2': ['A', 'B'], '3': ['A', 'B'], '4': ['A', 'B']
@@ -54,6 +60,13 @@ export default function LandingPage() {
       '1': ['A', 'B'], '2': ['A', 'B'], '3': ['A', 'B'], '4': ['A', 'B']
     }
   };
+
+  const passwordRules = {
+  length: regPassword.length >= 8,
+  upper: /[A-Z]/.test(regPassword),
+  number: /\d/.test(regPassword),
+  symbol: /[!@#$%^&*]/.test(regPassword),
+};
 
   // --- THE TRUE LOGIN HANDLER ---
   const handleLogin = async (e: React.FormEvent) => {
@@ -114,7 +127,7 @@ export default function LandingPage() {
   if (regRole === 'STUDENT') {
     const schoolIdPattern = /^(\d{4}-\d{4}-[A-Z]|\d{4}-S0\d{4})$/;
     if (!schoolIdPattern.test(schoolId)) {
-      toast({ title: 'Invalid School ID', description: 'Format must be e.g. 2023-1234-A or 2025-S03321', status: 'warning' });
+      toast({ title: 'Invalid School ID', description: 'Format must be e.g. 2024-1234-A or 2025-S04321', status: 'warning' });
       return;
     }
   }
@@ -217,9 +230,20 @@ export default function LandingPage() {
                     </InputGroup>
                   </FormControl>
                   <FormControl isRequired>
-                    <FormLabel>Password</FormLabel>
-                    <Input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-                  </FormControl>
+  <FormLabel>Password</FormLabel>
+  <InputGroup>
+    <Input type={showLoginPw ? 'text' : 'password'} value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+    <InputRightElement>
+      <IconButton
+        aria-label="Toggle password visibility"
+        icon={showLoginPw ? <ViewOffIcon /> : <ViewIcon />}
+        size="sm"
+        variant="ghost"
+        onClick={() => setShowLoginPw(!showLoginPw)}
+      />
+    </InputRightElement>
+  </InputGroup>
+</FormControl>
                   <Button type="submit" colorScheme="blue" size="lg" w="100%" isLoading={isLoggingIn}>Secure Login</Button>
                 </VStack>
               </form>
@@ -285,10 +309,11 @@ export default function LandingPage() {
           <FormControl isRequired>
             <FormLabel>School ID</FormLabel>
             <Input 
-              placeholder="2023-1234-A" 
+              placeholder="2024-1234-A or 2025-S04321" 
               value={schoolId} 
               onChange={(e) => setSchoolId(e.target.value.toUpperCase())} 
             />
+            <FormHelperText fontSize="xs">Old format: YYYY-XXXX-Letter · New format: YYYY-S0XXXX</FormHelperText>
           </FormControl>
         
           <FormControl isRequired>
@@ -366,9 +391,32 @@ export default function LandingPage() {
       </FormControl>
 
       <FormControl isRequired>
-        <FormLabel>Password</FormLabel>
-        <Input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
-      </FormControl>
+  <FormLabel>Password</FormLabel>
+  <InputGroup>
+    <Input 
+      type={showRegPw ? 'text' : 'password'} 
+      value={regPassword} 
+      onChange={(e) => { setRegPassword(e.target.value); setShowRules(true); }} 
+    />
+    <InputRightElement>
+      <IconButton
+        aria-label="Toggle password visibility"
+        icon={showRegPw ? <ViewOffIcon /> : <ViewIcon />}
+        size="sm"
+        variant="ghost"
+        onClick={() => setShowRegPw(!showRegPw)}
+      />
+    </InputRightElement>
+  </InputGroup>
+  {showRules && (
+    <VStack align="start" mt={2} spacing={0} fontSize="xs">
+      <Text color={passwordRules.length ? 'green.500' : 'gray.400'}>{passwordRules.length ? '✓' : '○'} At least 8 characters</Text>
+      <Text color={passwordRules.upper ? 'green.500' : 'gray.400'}>{passwordRules.upper ? '✓' : '○'} One uppercase letter</Text>
+      <Text color={passwordRules.number ? 'green.500' : 'gray.400'}>{passwordRules.number ? '✓' : '○'} One number</Text>
+      <Text color={passwordRules.symbol ? 'green.500' : 'gray.400'}>{passwordRules.symbol ? '✓' : '○'} One symbol (!@#$%^&*)</Text>
+    </VStack>
+  )}
+</FormControl>
 
       {/* 5. SUBMIT BUTTON */}
       <Button type="submit" colorScheme="green" size="lg" w="100%" mt={4} isLoading={isRegistering}>

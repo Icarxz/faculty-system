@@ -51,7 +51,7 @@ export default function StudentDashboard() {
   const mutedText = useColorModeValue('#6b7fa0', '#7a93b0');
 
   const fetchData = () => {
-    fetch('${import.meta.env.VITE_API_URL}/api/faculty/status')
+    fetch(`${import.meta.env.VITE_API_URL}/api/faculty/status`)
       .then(res => res.json())
       .then(data => setFaculty(data));
     if (userName) {
@@ -85,7 +85,7 @@ export default function StudentDashboard() {
     setIsSubmitting(true);
     
     try {
-      const response = await fetch('${import.meta.env.VITE_API_URL}/api/faculty/appointment', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/appointment`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentName: userName, studentSection, facultyId: selectedFaculty, date: aptDate, time: aptTime, reason: aptReason })
       });
