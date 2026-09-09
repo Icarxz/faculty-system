@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const User = require('../models/User'); 
 const Schedule = require('../models/Schedule');
@@ -34,9 +35,9 @@ router.post('/register', async (req, res) => {
     }
     
     // Password Strength Validation
-    const passwordPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
+    const passwordPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
     if (!passwordPattern.test(password)) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters, with 1 uppercase letter, 1 number, and 1 symbol.' });
+      return res.status(400).json({ error: 'Password must be at least 12 characters, with 1 uppercase letter, 1 number, and 1 symbol.' });
     }
 
     // Hash the password before saving/bcrypting it to the database

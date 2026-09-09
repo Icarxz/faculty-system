@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs'); 
 
 // Connect to the EXACT same database as your main server
-mongoose.connect('mongodb://127.0.0.1:27017/faculty_attendance_local')
+mongoose.connect(process.env.MONGO_URI)
 .then(() => console.log('Connected to MongoDB for seeding...'))
 .catch(err => console.error('Database connection error:', err));
 
@@ -23,11 +23,11 @@ const seedDatabase = async () => {
 
     console.log('Generating encrypted default passwords...');
     const salt = await bcrypt.genSalt(10);
-    const defaultPassword = await bcrypt.hash('Password123!', salt); // The password to type during your demo
+    const defaultPassword = await bcrypt.hash('Password123!', salt); // ANG ATON PASSWORD
 
     console.log('Database is empty. Planting fresh, secured accounts...');
 
-    // 1. Core System Accounts (Juan Dela Cruz removed)
+    // 1. Core System Accounts
     await User.create({ 
       role: 'ADMIN', 
       name: 'System Admin', 

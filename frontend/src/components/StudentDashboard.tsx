@@ -23,7 +23,7 @@ export default function StudentDashboard() {
 
   const [activePage, setActivePage] = useState('home');
   const [faculty, setFaculty] = useState<any[]>([]);
-  const [studentSection, setStudentSection] = useState('BS INFO 3D');
+  const [studentSection, setStudentSection] = useState(localStorage.getItem('programPosition') || '');
 
   const [selectedFaculty, setSelectedFaculty] = useState('');
   const [aptDate, setAptDate] = useState('');

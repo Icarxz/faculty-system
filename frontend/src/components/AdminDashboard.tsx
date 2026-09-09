@@ -5,7 +5,7 @@ import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, useDisclosure 
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
+// import { QRCodeSVG } from 'qrcode.react';
 
 export const formatTime = (timeStr: string) => {
   if (!timeStr) return '';
@@ -26,9 +26,10 @@ export default function AdminDashboard() {
   const [activePage, setActivePage] = useState('home');
   const [facultyList, setFacultyList] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [facultySearch, setFacultySearch] = useState('');
   const [role, setRole] = useState('FACULTY'); 
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [selectedQr, setSelectedQr] = useState({ hash: '', name: '' }); 
+  // const [selectedQr, setSelectedQr] = useState({ hash: '', name: '' }); 
 
   // Form States
   const [name, setName] = useState('');
@@ -36,7 +37,7 @@ export default function AdminDashboard() {
   const [programPosition, setProgramPosition] = useState('');
   const [room, setRoom] = useState('');
   const [loading, setLoading] = useState(false);
-  const [generatedQr, setGeneratedQr] = useState('');
+  // const [generatedQr, setGeneratedQr] = useState('');
   const [newFacultyName, setNewFacultyName] = useState('');
 
   const [selectedFacultyId, setSelectedFacultyId] = useState('');
@@ -73,7 +74,8 @@ export default function AdminDashboard() {
 
   const handleAddFaculty = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true); setGeneratedQr('');
+    setLoading(true); 
+    // setGeneratedQr('');
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/faculty/add`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -82,7 +84,7 @@ export default function AdminDashboard() {
       const data = await response.json();
       if (response.ok) {
         toast({ title: data.message, status: 'success' });
-        setGeneratedQr(data.qrHash); setNewFacultyName(data.facultyName);
+        setNewFacultyName(data.facultyName);
         setName(''); setEmail(''); setProgramPosition(''); setRoom('');
         fetchAllData();
       } else { toast({ title: data.error, status: 'error' }); }
@@ -225,7 +227,7 @@ export default function AdminDashboard() {
                       </FormControl>
                     </HStack>
                     
-                    <ChakraButton type="submit" colorScheme="blue" w="100%" isLoading={loading}>Generate Account & QR</ChakraButton>
+                    <ChakraButton type="submit" colorScheme="blue" w="100%" isLoading={loading}>Generate Account</ChakraButton>
                   </VStack>
                 </form>
               </Box>
@@ -253,15 +255,13 @@ export default function AdminDashboard() {
             </Box>
 
             <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm" flex="1" minH="400px" display="flex" flexDir="column" alignItems="center" justifyContent="center">
-              {generatedQr ? (
+              {newFacultyName ? (
                 <VStack spacing={4}>
                   <Heading size="md" color="green.500">Provisioning Complete</Heading>
-                  <Text textAlign="center" color={textColor}>Scan to authenticate:<br/><b>{newFacultyName}</b></Text>
-                  <Box p={4} bg="white" borderWidth="2px" borderRadius="lg"><QRCodeSVG value={generatedQr} size={200} /></Box>
-                  <ChakraButton size="sm" variant="outline" colorScheme="blue" onClick={() => window.print()}>Print Hardware Key (QR)</ChakraButton>
+                  <Text textAlign="center" color={textColor}>Account created for <b>{newFacultyName}</b></Text>
                 </VStack>
               ) : (
-                <Text color={mutedText} textAlign="center">Fill provisioning form to generate authentication token.</Text>
+                <Text color={mutedText} textAlign="center">Fill provisioning form to create a faculty account.</Text>
               )}
             </Box>
           </Box>
@@ -269,21 +269,30 @@ export default function AdminDashboard() {
 
         {activePage === 'faculty' && (
           <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
+            <Input
+              placeholder="Search by name or position..."
+              value={facultySearch}
+              onChange={(e) => setFacultySearch(e.target.value)}
+              mb={4}
+              maxW="400px"
+              color={textColor}
+              borderColor={borderColor}
+            />
             <Table variant="simple" size="sm">
-              <Thead><Tr><Th color={mutedText}>Name</Th><Th color={mutedText}>Position</Th><Th color={mutedText}>Live Status</Th><Th color={mutedText}>Authentication Key</Th></Tr></Thead>
+              <Thead><Tr><Th color={mutedText}>Name</Th><Th color={mutedText}>Position</Th><Th color={mutedText}>Live Status</Th></Tr></Thead>
               <Tbody>
-                {facultyList.map(prof => (
-                  <Tr key={prof._id}>
-                    <Td fontWeight="bold" color={textColor}>{prof.name}</Td>
-                    <Td color={textColor}>{prof.programPosition}</Td>
-                    <Td><Badge colorScheme={prof.currentStatus === 'AVAILABLE' ? 'green' : 'gray'}>{prof.currentStatus}</Badge></Td>
-                    <Td>
-                      <ChakraButton size="xs" colorScheme="blue" variant="outline" onClick={() => { setSelectedQr({ hash: prof.qrHash, name: prof.name }); onOpen(); }}>
-                        View QR
-                      </ChakraButton>
-                    </Td>
-                  </Tr>
-                ))}
+                {facultyList
+                  .filter(prof =>
+                    prof.name.toLowerCase().includes(facultySearch.toLowerCase()) ||
+                    prof.programPosition.toLowerCase().includes(facultySearch.toLowerCase())
+                  )
+                  .map(prof => (
+                    <Tr key={prof._id}>
+                      <Td fontWeight="bold" color={textColor}>{prof.name}</Td>
+                      <Td color={textColor}>{prof.programPosition}</Td>
+                      <Td><Badge colorScheme={prof.currentStatus === 'AVAILABLE' ? 'green' : 'gray'}>{prof.currentStatus}</Badge></Td>
+                    </Tr>
+                  ))}
               </Tbody>
             </Table>
           </Box>
@@ -343,12 +352,12 @@ export default function AdminDashboard() {
       <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader textAlign="center">Hardware Key for {selectedQr.name}</ModalHeader>
+          {/* <ModalHeader textAlign="center">Hardware Key for {selectedQr.name}</ModalHeader> */}
           <ModalCloseButton />
           <ModalBody display="flex" flexDirection="column" alignItems="center" pb={8}>
-            <Box p={4} bg="white" borderWidth="2px" borderRadius="lg" mb={4}>
+            {/* <Box p={4} bg="white" borderWidth="2px" borderRadius="lg" mb={4}>
               <QRCodeSVG value={selectedQr.hash} size={250} />
-            </Box>
+            </Box> */}
             <ChakraButton colorScheme="blue" onClick={() => window.print()}>Print QR Key</ChakraButton>
           </ModalBody>
         </ModalContent>
