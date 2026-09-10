@@ -27,6 +27,7 @@ export default function AdminDashboard() {
   const [facultyList, setFacultyList] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [facultySearch, setFacultySearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
   const [role, setRole] = useState('FACULTY'); 
   const [allUsers, setAllUsers] = useState<any[]>([]);
   // const [selectedQr, setSelectedQr] = useState({ hash: '', name: '' }); 
@@ -153,9 +154,10 @@ export default function AdminDashboard() {
         <nav style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
           {[
             { page: "home", label: "Provisioning" },
-            { page: "faculty", label: "Roster Management" },
+            { page: "faculty", label: "Faculty Management" },
             { page: "appointments", label: `Appointments (${appointments.filter(a => a.status === 'PENDING').length})` },
-            { page: "verification", label: "Verification Queue" }
+            { page: "verification", label: "Verification Queue" },
+            { page: "students", label: "Student Management" }
           ].map(({ page, label }) => {
             const active = activePage === page;
             return (
@@ -189,6 +191,7 @@ export default function AdminDashboard() {
             {activePage === 'verification' && "Account Verification Queue"}
           </Heading>
           <Text color={mutedText} mt={1}>Welcome back, {userName}</Text>
+          </Box>
         </Box>
 
         {activePage === 'home' && (
@@ -293,6 +296,40 @@ export default function AdminDashboard() {
                       <Td><Badge colorScheme={prof.currentStatus === 'AVAILABLE' ? 'green' : 'gray'}>{prof.currentStatus}</Badge></Td>
                     </Tr>
                   ))}
+                  
+              </Tbody>
+            </Table>
+          </Box>
+        )}
+        {activePage === 'students' && (
+          <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
+            <Input
+              placeholder="Search by name, School ID, or section..."
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              mb={4}
+              maxW="400px"
+              color={textColor}
+              borderColor={borderColor}
+            />
+            <Table variant="simple" size="sm">
+              <Thead><Tr><Th color={mutedText}>Name</Th><Th color={mutedText}>School ID</Th><Th color={mutedText}>Program / Section</Th><Th color={mutedText}>Email</Th></Tr></Thead>
+              <Tbody>
+                {allUsers
+                  .filter(u => u.role === 'STUDENT')
+                  .filter(u =>
+                    u.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                    (u.schoolId || '').toLowerCase().includes(studentSearch.toLowerCase()) ||
+                    (u.programPosition || '').toLowerCase().includes(studentSearch.toLowerCase())
+                  )
+                  .map(student => (
+                    <Tr key={student._id}>
+                      <Td fontWeight="bold" color={textColor}>{student.name}</Td>
+                      <Td color={textColor}>{student.schoolId}</Td>
+                      <Td color={textColor}>{student.programPosition}</Td>
+                      <Td color={textColor}>{student.email}</Td>
+                    </Tr>
+                  ))}
               </Tbody>
             </Table>
           </Box>
@@ -326,28 +363,33 @@ export default function AdminDashboard() {
         )}
 
         {activePage === 'verification' && (
-          <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
-             <Text mb={4} color={mutedText}>
-               <em>Note for Panel:</em> This queue displays accounts awaiting institutional verification. Currently, provisioning is handled manually by the Admin.
-             </Text>
-             <Divider mb={4} borderColor={borderColor}/>
-            <Table variant="simple" size="sm">
-              <Thead><Tr><Th color={mutedText}>Name</Th><Th color={mutedText}>Email</Th><Th color={mutedText}>Requested Role</Th><Th color={mutedText}>System Status</Th><Th color={mutedText}>Action</Th></Tr></Thead>
-              <Tbody>
-                {allUsers.map(user => (
-                  <Tr key={user._id}>
-                    <Td fontWeight="bold" color={textColor}>{user.name}</Td>
-                    <Td color={textColor}>{user.email}</Td>
-                    <Td><Badge colorScheme="blue">{user.role}</Badge></Td>
-                    <Td><Badge colorScheme="green">VERIFIED (Auto-Provisioned)</Badge></Td>
-                    <Td><ChakraButton size="xs" isDisabled>Revoke Access</ChakraButton></Td>
+        <Box bg={cardBg} p={6} borderRadius="lg" borderWidth="1px" borderColor={borderColor} shadow="sm">
+          <Text mb={4} color={mutedText}>
+            <em>Note for Panel:</em> This queue shows students who registered without an official School ID (e.g. recent transferees), pending manual verification.
+          </Text>
+          <Divider mb={4} borderColor={borderColor}/>
+          <Table variant="simple" size="sm">
+            <Thead><Tr><Th color={mutedText}>Name</Th><Th color={mutedText}>Email</Th><Th color={mutedText}>Program</Th><Th color={mutedText}>Status</Th><Th color={mutedText}>Action</Th></Tr></Thead>
+            <Tbody>
+              {allUsers
+                .filter(u => u.role === 'STUDENT' && u.accountStatus === 'PENDING_APPROVAL')
+                .map(student => (
+                  <Tr key={student._id}>
+                    <Td fontWeight="bold" color={textColor}>{student.name}</Td>
+                    <Td color={textColor}>{student.email}</Td>
+                    <Td color={textColor}>{student.programPosition}</Td>
+                    <Td><Badge colorScheme="orange">Awaiting School ID</Badge></Td>
+                    <Td>
+                      <ChakraButton size="xs" colorScheme="green" onClick={() => handleVerifyStudent(student._id)}>
+                        Assign ID & Verify
+                      </ChakraButton>
+                    </Td>
                   </Tr>
                 ))}
-              </Tbody>
-            </Table>
-          </Box>
-        )}
-      </Box>
+            </Tbody>
+          </Table>
+        </Box>
+      )}
 
       <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay />

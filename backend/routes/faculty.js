@@ -44,7 +44,7 @@ router.post('/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const accountStatus = role === 'STUDENT' ? 'ACTIVE' : 'PENDING_APPROVAL';
+    const accountStatus = (role === 'STUDENT' && !schoolId) ? 'PENDING_APPROVAL' : 'ACTIVE';
 
     const newUser = await User.create({
       name,
@@ -367,7 +367,9 @@ router.get('/appointments/all', async (req, res) => {
 // 10. GET ROUTE: Fetch all unverified users
 router.get('/users/all', async (req, res) => {
   try {
-    const users = await User.find({ role: { $ne: 'ADMIN' } }).sort({ createdAt: -1 });
+    const users = await User.find({ role: { $ne: 'ADMIN' } })
+  .select('-password')
+  .sort({ createdAt: -1 });
     res.json(users);
   } catch (error) {
     res.status(500).json({ error: 'Server error fetching users' });
